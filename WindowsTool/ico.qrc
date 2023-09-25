@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/">
+        <file>ico/scared.png</file>
+        <file>ico/cry.png</file>
+        <file>ico/cool.png</file>
+        <file>ico/what.png</file>
+        <file>ico/kiss.png</file>
+        <file>ico/toolBox.png</file>
+        <file>ico/question.png</file>
+        <file>ico/attention.png</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>600</width>
+    <height>750</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>600</width>
+    <height>750</height>
+   </size>
+  </property>
+  <property name="maximumSize">
+   <size>
+    <width>600</width>
+    <height>750</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout_2">
+    <item>
+     <widget class="QWidget" name="widget" native="true">
+      <layout class="QHBoxLayout" name="horizontalLayout">
+       <item>
+        <widget class="QLabel" name="label">
+         <property name="font">
+          <font>
+           <family>宋体</family>
+           <pointsize>14</pointsize>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="text">
+          <string>这是一个电脑工具箱，可以修复一些常见的电脑问题</string>
+         </property>
+         <property name="alignment">
+          <set>Qt::AlignCenter</set>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QWidget" name="widget_4" native="true">
+      <layout class="QVBoxLayout" name="verticalLayout">
+       <item>
+        <widget class="QStackedWidget" name="stackedWidget">
+         <property name="currentIndex">
+          <number>1</number>
+         </property>
+         <widget class="QWidget" name="page">
+          <widget class="QLabel" name="label_3">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>130</y>
+             <width>80</width>
+             <height>20</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <family>宋体</family>
+             <pointsize>12</pointsize>
+             <italic>false</italic>
+             <bold>false</bold>
+             <underline>false</underline>
+            </font>
+           </property>
+           <property name="text">
+            <string>高级选项</string>
+           </property>
+          </widget>
+          <widget class="QWidget" name="widget_2" native="true">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>40</y>
+             <width>534</width>
+             <height>72</height>
+            </rect>
+           </property>
+           <widget class="QPushButton" name="btn_autoCheck">
+            <property name="geometry">
+             <rect>
+              <x>10</x>
+              <y>10</y>
+              <width>111</width>
+              <height>51</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>自动检测并修复</string>
+            </property>
+           </widget>
+           <widget class="QPushButton" name="btn_showNetWork">
+            <property name="geometry">
+             <rect>
+              <x>210</x>
+              <y>10</y>
+              <width>111</width>
+              <height>51</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>查看网络信息</string>
+            </property>
+           </widget>
+           <widget class="QPushButton" name="btn_netWorkTest">
+            <property name="geometry">
+             <rect>
+              <x>390</x>
+              <y>10</y>
+              <width>121</width>
+              <height>51</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string> 网络测试</string>
+            </property>
+           </widget>
+          </widget>
+          <widget class="QWidget" name="widget_3" native="true">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>160</y>
+             <width>534</width>
+             <height>72</height>
+            </rect>
+           </property>
+           <widget class="QPushButton" name="btn_refreshDNS">
+            <property name="geometry">
+             <rect>
+              <x>10</x>
+              <y>10</y>
+              <width>111</width>
+              <height>51</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>刷新网络配置</string>
+            </property>
+           </widget>
+           <widget class="QPushButton" name="btn_resetWinSock">
+            <property name="geometry">
+             <rect>
+              <x>210</x>
+              <y>10</y>
+              <width>111</width>
+              <height>51</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>重置WinSock</string>
+            </property>
+           </widget>
+          </widget>
+          <widget class="QLabel" name="label_2">
+           <property name="geometry">
+            <rect>
+             <x>11</x>
+             <y>11</y>
+             <width>40</width>
+             <height>20</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <family>宋体</family>
+             <pointsize>12</pointsize>
+             <italic>false</italic>
+             <bold>false</bold>
+             <underline>false</underline>
+            </font>
+           </property>
+           <property name="text">
+            <string>网络</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="btn_nextPage">
+           <property name="geometry">
+            <rect>
+             <x>470</x>
+             <y>260</y>
+             <width>80</width>
+             <height>29</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>下一页</string>
+           </property>
+          </widget>
+         </widget>
+         <widget class="QWidget" name="page_2">
+          <widget class="QLabel" name="label_4">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>10</y>
+             <width>264</width>
+             <height>61</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <family>宋体</family>
+             <pointsize>12</pointsize>
+             <italic>false</italic>
+             <bold>false</bold>
+             <underline>false</underline>
+            </font>
+           </property>
+           <property name="text">
+            <string>系统</string>
+           </property>
+          </widget>
+          <widget class="QWidget" name="widget_5" native="true">
+           <property name="geometry">
+            <rect>
+             <x>10</x>
+             <y>60</y>
+             <width>251</width>
+             <height>221</height>
+            </rect>
+           </property>
+           <widget class="QPushButton" name="btn_cleaner">
+            <property name="geometry">
+             <rect>
+              <x>10</x>
+              <y>10</y>
+              <width>131</width>
+              <height>29</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>垃圾清理</string>
+            </property>
+           </widget>
+           <widget class="QPushButton" name="btn_fixWhite">
+            <property name="geometry">
+             <rect>
+              <x>10</x>
+              <y>80</y>
+              <width>129</width>
+              <height>29</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>修复桌面图标变白</string>
+            </property>
+           </widget>
+           <widget class="QPushButton" name="btn_prt">
+            <property name="geometry">
+             <rect>
+              <x>10</x>
+              <y>150</y>
+              <width>129</width>
+              <height>29</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>截图工具</string>
+            </property>
+           </widget>
+          </widget>
+          <widget class="QPushButton" name="btn_prePage">
+           <property name="geometry">
+            <rect>
+             <x>470</x>
+             <y>260</y>
+             <width>80</width>
+             <height>29</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string>上一页</string>
+           </property>
+          </widget>
+          <widget class="QLabel" name="label_5">
+           <property name="geometry">
+            <rect>
+             <x>260</x>
+             <y>10</y>
+             <width>264</width>
+             <height>61</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <family>宋体</family>
+             <pointsize>12</pointsize>
+             <italic>false</italic>
+             <bold>false</bold>
+             <underline>false</underline>
+            </font>
+           </property>
+           <property name="text">
+            <string>其他工具</string>
+           </property>
+          </widget>
+          <widget class="QWidget" name="widget_6" native="true">
+           <property name="geometry">
+            <rect>
+             <x>270</x>
+             <y>60</y>
+             <width>251</width>
+             <height>191</height>
+            </rect>
+           </property>
+           <widget class="QPushButton" name="btn_key">
+            <property name="geometry">
+             <rect>
+              <x>10</x>
+              <y>10</y>
+              <width>231</width>
+              <height>29</height>
+             </rect>
+            </property>
+            <property name="text">
+             <string>一些你可能不知道的快捷键</string>
+            </property>
+           </widget>
+          </widget>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QTextBrowser" name="textBrowser"/>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>600</width>
+     <height>25</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menu">
+    <property name="title">
+     <string>更多</string>
+    </property>
+    <addaction name="actionAbout"/>
+   </widget>
+   <addaction name="menu"/>
+  </widget>
+  <action name="actionAbout">
+   <property name="text">
+    <string>关于</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
