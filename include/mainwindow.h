@@ -11,6 +11,7 @@ QT_END_NAMESPACE
 
 class ProcessRunner;
 class QToolButton;
+class SysMonitor;
 
 /**
  * 主窗口：GUI 与流程编排。
@@ -160,6 +161,10 @@ private:
     void runDnsWrite(const QString &servers);
     void handleDnsWrite();
 
+    // 实时监控
+    void runMonitor();
+    void stopMonitor();
+
     /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
     void showSystemResultCard(QWidget *card);
 
@@ -168,6 +173,9 @@ private:
 
     /** 当前默认路由网卡的显示名，DNS 切换时用于提示 */
     QString m_dnsAlias;
+
+    /** CPU/内存/磁盘/网络实时采样器 */
+    SysMonitor *m_monitor = nullptr;
 
     // 工具方法
     void appendLog(const QString &text);

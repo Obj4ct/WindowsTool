@@ -23,10 +23,12 @@ set(APP_SOURCES
     src/main.cpp
     src/mainwindow.cpp
     src/processrunner.cpp
+    src/sysmonitor.cpp
     src/uiicons.cpp
     include/mainwindow.h
     include/processrunner.h
     include/netcheck.h
+    include/sysmonitor.h
     include/uiicons.h
     src/mainwindow.ui
     resources/ico.qrc
@@ -43,7 +45,8 @@ target_include_directories(WindowsTool PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 target_link_libraries(WindowsTool PRIVATE
-    Qt5::Widgets)
+    Qt5::Widgets
+    iphlpapi)
 
 # 源文件为 UTF-8 无 BOM，MSVC 默认按代码页 936(GBK) 解码，
 # 会导致中文字符串字面量断裂（error C2001: 常量中有换行符）。

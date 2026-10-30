@@ -2,6 +2,7 @@
 #include "ui_mainwindow.h"
 #include "processrunner.h"
 #include "netcheck.h"
+#include "sysmonitor.h"
 #include "uiicons.h"
 
 #include <QAbstractButton>
@@ -169,6 +170,17 @@ QString driverClassLabel(const QString &code)
     return code;
 }
 
+/** 每秒字节数 → "12.3 KB"（后面由调用方补 "/s"） */
+QString formatRate(double bytesPerSec)
+{
+    if (bytesPerSec >= 1024.0 * 1024.0)
+        return QString::number(bytesPerSec / (1024.0 * 1024.0), 'f', 1)
+               + QStringLiteral(" MB");
+    if (bytesPerSec >= 1024.0)
+        return QString::number(bytesPerSec / 1024.0, 'f', 1) + QStringLiteral(" KB");
+    return QString::number(qMax(0.0, bytesPerSec), 'f', 0) + QStringLiteral(" B");
+}
+
 /** 把样式表文件读入并应用到整个应用 */
 bool applyStyleSheet(QApplication &app)
 {
@@ -309,7 +321,7 @@ void MainWindow::setupTheme()
     ui->btn_diskHealth->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
     ui->btn_hwinfo->setIcon(tileIcon(UiIcons::Icon::Monitor));
     ui->btn_battery->setIcon(grayIcon(UiIcons::Icon::Activity));
-    ui->btn_monitor->setIcon(grayIcon(UiIcons::Icon::Activity));
+    ui->btn_monitor->setIcon(tileIcon(UiIcons::Icon::Activity));
 
     // 系统管理
     ui->btn_startup->setIcon(tileIcon(UiIcons::Icon::Rocket));
@@ -519,10 +531,6 @@ void MainWindow::setupPlaceholders()
                         "电池健康",
                         "将读取电池的设计容量与当前容量，评估损耗程度，"
                         "并展示最近的充电记录。");
-    wirePlaceholderTile(ui->btn_monitor,
-                        "实时监控",
-                        "将持续展示 CPU、内存、磁盘与网络的实时占用，"
-                        "用于定位卡顿发生的具体时刻。");
 
     wirePlaceholderTile(ui->btn_dup,
                         "重复文件",
@@ -955,6 +963,38 @@ void MainWindow::setupSystem()
     // 硬件信息快照（只读）
     connect(ui->btn_hwinfo, &QAbstractButton::clicked,
             this, &MainWindow::runHwInfo);
+
+    // 实时监控：1 秒采样一次，直接走 Win32 API
+    m_monitor = new SysMonitor(this);
+    connect(ui->btn_monitor, &QAbstractButton::clicked,
+            this, &MainWindow::runMonitor);
+    connect(ui->monitorStopBtn, &QAbstractButton::clicked,
+            this, &MainWindow::stopMonitor);
+    connect(m_monitor, &SysMonitor::updated, this,
+            [this](double cpu, double memUsedMb, double memTotalMb,
+                   double diskPercent, const QString &diskName,
+                   double netIn, double netOut) {
+                ui->monCpuBar->setValue(cpu < 0 ? 0 : qRound(cpu));
+                ui->monCpuVal->setText(cpu < 0
+                                           ? QStringLiteral("计算中…")
+                                           : QStringLiteral("%1%").arg(cpu, 0, 'f', 1));
+
+                const double memPercent = memTotalMb > 0 ? memUsedMb * 100.0 / memTotalMb
+                                                         : 0.0;
+                ui->monMemBar->setValue(static_cast<int>(qRound(memPercent)));
+                ui->monMemVal->setText(QStringLiteral("%1 / %2 GB（%3%）")
+                                           .arg(memUsedMb / 1024.0, 0, 'f', 1)
+                                           .arg(memTotalMb / 1024.0, 0, 'f', 1)
+                                           .arg(memPercent, 0, 'f', 0));
+
+                ui->monDiskName->setText(diskName);
+                ui->monDiskBar->setValue(static_cast<int>(qRound(diskPercent)));
+                ui->monDiskVal->setText(QStringLiteral("已用 %1%")
+                                            .arg(diskPercent, 0, 'f', 1));
+
+                ui->monNetVal->setText(QStringLiteral("↓ %1/s　↑ %2/s")
+                                           .arg(formatRate(netIn), formatRate(netOut)));
+            });
 
     // 进程列表（只读）
     connect(ui->btn_process, &QAbstractButton::clicked,
@@ -3275,6 +3315,39 @@ void MainWindow::handleDnsWrite()
                                 ui->dnsTencentBtn, ui->dns114Btn,
                                 ui->dnsGoogleBtn, ui->dnsBaiduBtn})
         button->setEnabled(!m_dnsAlias.isEmpty());
+}
+
+// ---------------------------------------------------------------- 实时监控
+
+void MainWindow::runMonitor()
+{
+    ui->cardMonitor->setVisible(true);
+    ui->monitorStopBtn->setEnabled(true);
+
+    if (!m_monitor->isRunning()) {
+        ui->monitorSummary->setText(
+            QStringLiteral("每秒刷新一次（CPU 占用率需要两次采样后才有数值）"));
+        appendLog("实时监控已启动，每秒刷新一次。");
+    }
+
+    m_monitor->start();
+
+    QScrollArea *page = ui->pageHardware;
+    QTimer::singleShot(0, this, [page, this] {
+        page->ensureWidgetVisible(ui->cardMonitor);
+    });
+}
+
+void MainWindow::stopMonitor()
+{
+    if (!m_monitor->isRunning())
+        return;
+
+    m_monitor->stop();
+    ui->monitorStopBtn->setEnabled(false);
+    ui->monitorSummary->setText(
+        QStringLiteral("已暂停（再次点击「实时监控」磁贴可继续）"));
+    appendLog("实时监控已暂停。");
 }
 
 // ---------------------------------------------------------------- 通用工具
