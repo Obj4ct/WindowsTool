@@ -47,7 +47,8 @@ private:
         PortsList,       ///< 端口占用读取（ports.ps1）
         LargeFiles,      ///< 大文件扫描（largefiles.ps1）
         DiskHealth,      ///< 磁盘健康检测（diskhealth.ps1）
-        HwInfo           ///< 硬件信息快照（hwinfo.ps1）
+        HwInfo,          ///< 硬件信息快照（hwinfo.ps1）
+        ProcessList      ///< 进程列表（processes.ps1）
     };
 
     void setupTheme();
@@ -113,6 +114,12 @@ private:
     void handleHwInfo();
     void addHwRow(const QString &category, const QString &title,
                   const QString &detail);
+
+    // 进程列表（只读）
+    void runProcessList();
+    void handleProcessList();
+    void addProcessRow(const QString &pid, const QString &name,
+                       const QString &detail);
 
     /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
     void showSystemResultCard(QWidget *card);

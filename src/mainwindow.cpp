@@ -167,7 +167,8 @@ MainWindow::MainWindow(QWidget *parent)
                 // 体检/启动项/端口/大文件/磁盘/硬件脚本只输出一行 JSON 标记，不把原始数据刷进控制台
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
-                    || m_task == Task::DiskHealth || m_task == Task::HwInfo)
+                    || m_task == Task::DiskHealth || m_task == Task::HwInfo
+                    || m_task == Task::ProcessList)
                     return;
                 appendLog(text);
             });
@@ -271,7 +272,7 @@ void MainWindow::setupTheme()
 
     // 系统管理
     ui->btn_startup->setIcon(tileIcon(UiIcons::Icon::Rocket));
-    ui->btn_process->setIcon(grayIcon(UiIcons::Icon::Dots));
+    ui->btn_process->setIcon(tileIcon(UiIcons::Icon::Dots));
     ui->btn_uninstall->setIcon(grayIcon(UiIcons::Icon::Grid));
     ui->btn_drivers->setIcon(grayIcon(UiIcons::Icon::Keyboard));
 
@@ -482,10 +483,6 @@ void MainWindow::setupPlaceholders()
                         "将持续展示 CPU、内存、磁盘与网络的实时占用，"
                         "用于定位卡顿发生的具体时刻。");
 
-    wirePlaceholderTile(ui->btn_process,
-                        "进程列表",
-                        "将展示运行中的进程及其 CPU、内存占用，"
-                        "支持按占用排序并结束异常进程。");
     wirePlaceholderTile(ui->btn_uninstall,
                         "软件卸载",
                         "将列出已安装程序并调用系统卸载流程，"
@@ -637,6 +634,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::HwInfo:
         handleHwInfo();
+        break;
+    case Task::ProcessList:
+        handleProcessList();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -882,6 +882,10 @@ void MainWindow::setupSystem()
     // 硬件信息快照（只读）
     connect(ui->btn_hwinfo, &QAbstractButton::clicked,
             this, &MainWindow::runHwInfo);
+
+    // 进程列表（只读）
+    connect(ui->btn_process, &QAbstractButton::clicked,
+            this, &MainWindow::runProcessList);
 }
 
 void MainWindow::runHealthCheck()
@@ -1435,10 +1439,11 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardLargeFiles->setVisible(card == ui->cardLargeFiles);
     ui->cardDiskHealth->setVisible(card == ui->cardDiskHealth);
     ui->cardHwinfo->setVisible(card == ui->cardHwinfo);
+    ui->cardProcesses->setVisible(card == ui->cardProcesses);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
-    if (card == ui->cardStartup)
+    if (card == ui->cardStartup || card == ui->cardProcesses)
         page = ui->pageManage;
     else if (card == ui->cardLargeFiles)
         page = ui->pageTools;
@@ -2034,6 +2039,169 @@ void MainWindow::addHwRow(const QString &category, const QString &title,
     layout->addLayout(text, 1);
 
     ui->hwinfoRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 进程列表
+
+void MainWindow::runProcessList()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/processes.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少进程脚本",
+                    "未找到 ps1\\processes.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在读取进程列表，请稍候……");
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->processesRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->processesSummary->setText(QStringLiteral("正在读取……"));
+    showSystemResultCard(ui->cardProcesses);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::ProcessList;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleProcessList()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("PROCESSES_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("读取进程列表失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->processesSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取进程列表失败",
+                    "未能从 PowerShell 获取有效的进程列表。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    const int total = data.value(QStringLiteral("total")).toInt();
+
+    // 只有一个进程时 PowerShell 可能输出对象而不是数组
+    QJsonArray items;
+    const QJsonValue value = data.value(QStringLiteral("items"));
+    if (value.isArray())
+        items = value.toArray();
+    else if (value.isObject())
+        items.append(value.toObject());
+
+    int shown = 0;
+    for (const QJsonValue &item : items) {
+        if (!item.isObject())
+            continue;
+        const QJsonObject object = item.toObject();
+        const QString name = object.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+
+        QStringList parts;
+        parts << QStringLiteral("内存 %1").arg(formatFileSize(
+            static_cast<qint64>(object.value(QStringLiteral("mem")).toDouble())));
+
+        const QJsonValue cpu = object.value(QStringLiteral("cpu"));
+        if (!cpu.isNull() && !cpu.isUndefined())
+            parts << QStringLiteral("CPU %1 秒").arg(
+                QString::number(cpu.toDouble(), 'f', 1));
+
+        QString command = object.value(QStringLiteral("cmd")).toString();
+        if (!command.isEmpty()) {
+            // 命令行普遍很长，截断后再展示，避免单行撑爆宽度
+            if (command.size() > 100)
+                command = command.left(100) + QStringLiteral("…");
+            parts << QStringLiteral("命令行 %1").arg(command);
+        }
+
+        addProcessRow(QString::number(object.value(QStringLiteral("pid")).toInt()),
+                      name, parts.join(QStringLiteral(" · ")));
+        ++shown;
+    }
+
+    QString summary;
+    if (shown == 0) {
+        summary = QStringLiteral("未读取到进程信息");
+    } else if (total > shown) {
+        summary = QStringLiteral("共 %1 个进程 · 仅列出内存占用最高的 %2 个（只读展示，不结束进程）")
+                      .arg(total).arg(shown);
+    } else {
+        summary = QStringLiteral("共 %1 个进程 · 按内存占用排序（只读展示，不结束进程）")
+                      .arg(shown);
+    }
+
+    ui->processesSummary->setText(summary);
+    ui->processesScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addProcessRow(const QString &pid, const QString &name,
+                               const QString &detail)
+{
+    QWidget *row = new QWidget(ui->processesRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(pid, row);
+    badge->setObjectName(QStringLiteral("procBadge"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(56);
+
+    QLabel *title = new QLabel(name, row);
+    title->setObjectName(QStringLiteral("procName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("procDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->processesRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具
