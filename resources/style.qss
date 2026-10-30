@@ -99,7 +99,7 @@
 #cardNetwork, #cardAdvanced, #cardOverview, #cardOverviewScore, #cardOverviewRecent,
 #cardSystem, #cardHealth, #cardHardware, #cardManage, #cardTools,
 #cardStartup, #cardPorts, #cardLargeFiles, #cardDiskHealth, #cardHwinfo,
-#cardProcesses, #cardDiskUsage, #cardShortcuts {
+#cardProcesses, #cardDiskUsage, #cardUninstall, #cardShortcuts {
     background: #FFFFFF;
     border: 1px solid #E6EAF2;
     border-radius: 14px;
@@ -108,7 +108,7 @@
 #cardTitleOverview, #cardTitleScore, #cardTitleRecent, #cardTitleNet, #cardTitleAdv,
 #cardTitleSys, #cardTitleHardware, #cardTitleManage, #cardTitleTools,
 #healthTitle, #startupTitle, #portsTitle, #largeFilesTitle, #diskHealthTitle,
-#hwinfoTitle, #processesTitle, #diskUsageTitle, #cardTitleTool {
+#hwinfoTitle, #processesTitle, #diskUsageTitle, #uninstallTitle, #cardTitleTool {
     color: #1B2637;
     font-size: 15px;
     font-weight: 600;
@@ -125,7 +125,7 @@
 #btn_quickHealth, #btn_quickNetwork, #btn_quickPorts, #btn_quickDisk,
 #btn_autoCheck, #btn_showNetWork, #btn_netWorkTest, #btn_ports,
 #btn_cleaner, #btn_fixWhite, #btn_healthCheck,
-#btn_diskHealth, #btn_hwinfo, #btn_startup, #btn_process,
+#btn_diskHealth, #btn_hwinfo, #btn_startup, #btn_process, #btn_uninstall,
 #btn_largeFiles, #btn_treedisk, #btn_prt {
     background: #FFFFFF;
     border: 1px solid #E3E8F1;
@@ -139,6 +139,7 @@
 #btn_autoCheck:hover, #btn_showNetWork:hover, #btn_netWorkTest:hover, #btn_ports:hover,
 #btn_cleaner:hover, #btn_fixWhite:hover, #btn_healthCheck:hover,
 #btn_diskHealth:hover, #btn_hwinfo:hover, #btn_startup:hover, #btn_process:hover,
+#btn_uninstall:hover,
 #btn_largeFiles:hover, #btn_treedisk:hover, #btn_prt:hover {
     background: #FAFCFF;
     border-color: #AEC7F4;
@@ -148,12 +149,13 @@
 #btn_autoCheck:pressed, #btn_showNetWork:pressed, #btn_netWorkTest:pressed, #btn_ports:pressed,
 #btn_cleaner:pressed, #btn_fixWhite:pressed, #btn_healthCheck:pressed,
 #btn_diskHealth:pressed, #btn_hwinfo:pressed, #btn_startup:pressed, #btn_process:pressed,
+#btn_uninstall:pressed,
 #btn_largeFiles:pressed, #btn_treedisk:pressed, #btn_prt:pressed {
     background: #EFF4FD;
     border-color: #8FB4EE;
 }
 #btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_netWorkTest:disabled, #btn_ports:disabled,
-#btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled, #btn_startup:disabled, #btn_hwinfo:disabled, #btn_process:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled, #btn_diskHealth:disabled, #btn_prt:disabled {
+#btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled, #btn_startup:disabled, #btn_hwinfo:disabled, #btn_process:disabled, #btn_uninstall:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled, #btn_diskHealth:disabled, #btn_prt:disabled {
     background: #F7F8FA;
     border-color: #EAEEF4;
     color: #B6BFCC;
@@ -472,6 +474,38 @@ QToolButton[placeholder="true"]:pressed {
 }
 
 #usageDetail {
+    color: #7A879B;
+    font-size: 12px;
+}
+
+/* ---------------- 已安装程序 ---------------- */
+#uninstallSummary {
+    color: #4A576F;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#uninstallScroll, #uninstallRows {
+    background: transparent;
+    border: none;
+}
+
+#appBadge {
+    background: #F3EEF9;
+    border-radius: 8px;
+    color: #7A56C2;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 6px;
+}
+
+#appName {
+    color: #1E2A3B;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#appDetail {
     color: #7A879B;
     font-size: 12px;
 }

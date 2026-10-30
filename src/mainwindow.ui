@@ -2010,6 +2010,94 @@
                </widget>
               </item>
               <item>
+               <widget class="QFrame" name="cardUninstall">
+                <property name="visible">
+                 <bool>false</bool>
+                </property>
+                <property name="frameShape">
+                 <enum>QFrame::NoFrame</enum>
+                </property>
+                <layout class="QVBoxLayout" name="uninstallLayout">
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>14</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>14</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="uninstallTitle">
+                   <property name="text">
+                    <string>已安装程序</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="uninstallSummary">
+                   <property name="text">
+                    <string>正在读取……</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QScrollArea" name="uninstallScroll">
+                   <property name="minimumSize">
+                    <size>
+                     <width>0</width>
+                     <height>235</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16777215</width>
+                     <height>235</height>
+                    </size>
+                   </property>
+                   <property name="frameShape">
+                    <enum>QFrame::NoFrame</enum>
+                   </property>
+                   <property name="horizontalScrollBarPolicy">
+                    <enum>Qt::ScrollBarAlwaysOff</enum>
+                   </property>
+                   <property name="widgetResizable">
+                    <bool>true</bool>
+                   </property>
+                   <widget class="QWidget" name="uninstallRows">
+                    <layout class="QVBoxLayout" name="uninstallRowsLayout">
+                     <property name="spacing">
+                      <number>8</number>
+                     </property>
+                     <property name="leftMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                    </layout>
+                   </widget>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
                <spacer name="managePageSpacer">
                 <property name="orientation">
                  <enum>Qt::Vertical</enum>

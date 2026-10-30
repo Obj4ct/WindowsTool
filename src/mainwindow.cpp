@@ -168,7 +168,8 @@ MainWindow::MainWindow(QWidget *parent)
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
                     || m_task == Task::DiskHealth || m_task == Task::HwInfo
-                    || m_task == Task::ProcessList || m_task == Task::DiskUsage)
+                    || m_task == Task::ProcessList || m_task == Task::DiskUsage
+                    || m_task == Task::UninstallList)
                     return;
                 appendLog(text);
             });
@@ -273,7 +274,7 @@ void MainWindow::setupTheme()
     // 系统管理
     ui->btn_startup->setIcon(tileIcon(UiIcons::Icon::Rocket));
     ui->btn_process->setIcon(tileIcon(UiIcons::Icon::Dots));
-    ui->btn_uninstall->setIcon(grayIcon(UiIcons::Icon::Grid));
+    ui->btn_uninstall->setIcon(tileIcon(UiIcons::Icon::Grid));
     ui->btn_drivers->setIcon(grayIcon(UiIcons::Icon::Keyboard));
 
     // 实用工具
@@ -483,10 +484,6 @@ void MainWindow::setupPlaceholders()
                         "将持续展示 CPU、内存、磁盘与网络的实时占用，"
                         "用于定位卡顿发生的具体时刻。");
 
-    wirePlaceholderTile(ui->btn_uninstall,
-                        "软件卸载",
-                        "将列出已安装程序并调用系统卸载流程，"
-                        "同时显示占用空间与安装日期。");
     wirePlaceholderTile(ui->btn_drivers,
                         "驱动清单",
                         "将列出已安装的驱动及其版本、日期与设备状态，"
@@ -636,6 +633,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::DiskUsage:
         handleDiskUsage();
+        break;
+    case Task::UninstallList:
+        handleUninstallList();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -889,6 +889,10 @@ void MainWindow::setupSystem()
     // 目录占用分析（只读）
     connect(ui->btn_treedisk, &QAbstractButton::clicked,
             this, &MainWindow::runDiskUsage);
+
+    // 已安装程序清单（只读）
+    connect(ui->btn_uninstall, &QAbstractButton::clicked,
+            this, &MainWindow::runUninstallList);
 }
 
 void MainWindow::runHealthCheck()
@@ -1444,10 +1448,12 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardHwinfo->setVisible(card == ui->cardHwinfo);
     ui->cardProcesses->setVisible(card == ui->cardProcesses);
     ui->cardDiskUsage->setVisible(card == ui->cardDiskUsage);
+    ui->cardUninstall->setVisible(card == ui->cardUninstall);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
-    if (card == ui->cardStartup || card == ui->cardProcesses)
+    if (card == ui->cardStartup || card == ui->cardProcesses
+        || card == ui->cardUninstall)
         page = ui->pageManage;
     else if (card == ui->cardLargeFiles || card == ui->cardDiskUsage)
         page = ui->pageTools;
@@ -2386,6 +2392,168 @@ void MainWindow::addUsageRow(const QString &percent, const QString &name,
     layout->addLayout(text, 1);
 
     ui->diskUsageRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 已安装程序
+
+void MainWindow::runUninstallList()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/uninstall.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少程序清单脚本",
+                    "未找到 ps1\\uninstall.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在读取已安装程序清单，请稍候……");
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->uninstallRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->uninstallSummary->setText(QStringLiteral("正在读取……"));
+    showSystemResultCard(ui->cardUninstall);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::UninstallList;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleUninstallList()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("UNINSTALL_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("读取已安装程序失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->uninstallSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取已安装程序失败",
+                    "未能从 PowerShell 获取有效的程序清单。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    const int total = data.value(QStringLiteral("total")).toInt();
+
+    // 只有一项时 PowerShell 可能输出对象而不是数组
+    QJsonArray items;
+    const QJsonValue value = data.value(QStringLiteral("items"));
+    if (value.isArray())
+        items = value.toArray();
+    else if (value.isObject())
+        items.append(value.toObject());
+
+    int shown = 0;
+    for (const QJsonValue &item : items) {
+        if (!item.isObject())
+            continue;
+        const QJsonObject object = item.toObject();
+        const QString name = object.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+
+        const qint64 size = static_cast<qint64>(
+            object.value(QStringLiteral("size")).toDouble());
+
+        QStringList parts;
+        const QString version = object.value(QStringLiteral("version")).toString();
+        const QString publisher = object.value(QStringLiteral("publisher")).toString();
+        const QString date = object.value(QStringLiteral("date")).toString();
+        if (!version.isEmpty())
+            parts << QStringLiteral("版本 %1").arg(version);
+        if (!publisher.isEmpty())
+            parts << publisher;
+        if (!date.isEmpty())
+            parts << QStringLiteral("安装于 %1").arg(date);
+        if (parts.isEmpty())
+            parts << QStringLiteral("缺少版本与发布者信息");
+
+        addAppRow(size > 0 ? formatFileSize(size) : QStringLiteral("—"),
+                  name, parts.join(QStringLiteral(" · ")));
+        ++shown;
+    }
+
+    QString summary;
+    if (shown == 0) {
+        summary = QStringLiteral("未读取到已安装程序");
+    } else if (total > shown) {
+        summary = QStringLiteral("共 %1 个已安装程序 · 列出占用最大的 %2 个（只读清单）")
+                      .arg(total).arg(shown);
+    } else {
+        summary = QStringLiteral("共 %1 个已安装程序 · 按占用空间排序（只读清单）")
+                      .arg(shown);
+    }
+
+    ui->uninstallSummary->setText(summary);
+    ui->uninstallScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addAppRow(const QString &size, const QString &name,
+                           const QString &detail)
+{
+    QWidget *row = new QWidget(ui->uninstallRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(size, row);
+    badge->setObjectName(QStringLiteral("appBadge"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(64);
+
+    QLabel *title = new QLabel(name, row);
+    title->setObjectName(QStringLiteral("appName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("appDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->uninstallRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具
