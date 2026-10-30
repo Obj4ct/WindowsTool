@@ -100,7 +100,7 @@
 #cardSystem, #cardHealth, #cardHardware, #cardManage, #cardTools,
 #cardStartup, #cardPorts, #cardLargeFiles, #cardDiskHealth, #cardHwinfo,
 #cardProcesses, #cardDiskUsage, #cardUninstall, #cardDrivers, #cardHosts,
-#cardShortcuts {
+#cardDns, #cardShortcuts {
     background: #FFFFFF;
     border: 1px solid #E6EAF2;
     border-radius: 14px;
@@ -110,7 +110,7 @@
 #cardTitleSys, #cardTitleHardware, #cardTitleManage, #cardTitleTools,
 #healthTitle, #startupTitle, #portsTitle, #largeFilesTitle, #diskHealthTitle,
 #hwinfoTitle, #processesTitle, #diskUsageTitle, #uninstallTitle, #driversTitle,
-#hostsTitle, #cardTitleTool {
+#hostsTitle, #dnsTitle, #cardTitleTool {
     color: #1B2637;
     font-size: 15px;
     font-weight: 600;
@@ -126,7 +126,7 @@
 /* 只列出可用功能；规划中的磁贴不进 ID 选择器，交给下面的 [placeholder] 灰色样式 */
 #btn_quickHealth, #btn_quickNetwork, #btn_quickPorts, #btn_quickDisk,
 #btn_autoCheck, #btn_showNetWork, #btn_netWorkTest, #btn_ports,
-#btn_hosts,
+#btn_hosts, #btn_dns,
 #btn_cleaner, #btn_fixWhite, #btn_healthCheck,
 #btn_diskHealth, #btn_hwinfo, #btn_startup, #btn_process, #btn_uninstall,
 #btn_drivers, #btn_largeFiles, #btn_treedisk, #btn_prt {
@@ -140,7 +140,7 @@
 }
 #btn_quickHealth:hover, #btn_quickNetwork:hover, #btn_quickPorts:hover, #btn_quickDisk:hover,
 #btn_autoCheck:hover, #btn_showNetWork:hover, #btn_netWorkTest:hover, #btn_ports:hover,
-#btn_hosts:hover,
+#btn_hosts:hover, #btn_dns:hover,
 #btn_cleaner:hover, #btn_fixWhite:hover, #btn_healthCheck:hover,
 #btn_diskHealth:hover, #btn_hwinfo:hover, #btn_startup:hover, #btn_process:hover,
 #btn_uninstall:hover, #btn_drivers:hover,
@@ -151,7 +151,7 @@
 }
 #btn_quickHealth:pressed, #btn_quickNetwork:pressed, #btn_quickPorts:pressed, #btn_quickDisk:pressed,
 #btn_autoCheck:pressed, #btn_showNetWork:pressed, #btn_netWorkTest:pressed, #btn_ports:pressed,
-#btn_hosts:pressed,
+#btn_hosts:pressed, #btn_dns:pressed,
 #btn_cleaner:pressed, #btn_fixWhite:pressed, #btn_healthCheck:pressed,
 #btn_diskHealth:pressed, #btn_hwinfo:pressed, #btn_startup:pressed, #btn_process:pressed,
 #btn_uninstall:pressed, #btn_drivers:pressed,
@@ -159,7 +159,7 @@
     background: #EFF4FD;
     border-color: #8FB4EE;
 }
-#btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_netWorkTest:disabled, #btn_ports:disabled, #btn_hosts:disabled,
+#btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_netWorkTest:disabled, #btn_ports:disabled, #btn_hosts:disabled, #btn_dns:disabled,
 #btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled, #btn_startup:disabled, #btn_hwinfo:disabled, #btn_process:disabled, #btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled, #btn_diskHealth:disabled, #btn_prt:disabled {
     background: #F7F8FA;
     border-color: #EAEEF4;
@@ -592,6 +592,39 @@ QToolButton[placeholder="true"]:pressed {
 }
 
 #hostsRestoreBtn:disabled {
+    color: #B6BFCC;
+}
+
+/* ---------------- DNS 切换 ---------------- */
+#dnsSummary {
+    color: #4A576F;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#dnsAutoBtn, #dnsAliBtn, #dnsTencentBtn, #dns114Btn, #dnsGoogleBtn, #dnsBaiduBtn {
+    background: #F2F4F8;
+    border: 1px solid #E1E6EF;
+    border-radius: 8px;
+    color: #2A3648;
+    font-size: 13px;
+    padding: 0 14px;
+}
+
+#dnsAutoBtn:hover, #dnsAliBtn:hover, #dnsTencentBtn:hover,
+#dns114Btn:hover, #dnsGoogleBtn:hover, #dnsBaiduBtn:hover {
+    background: #EAF1FE;
+    border-color: #C3D7F8;
+    color: #2B6CD4;
+}
+
+#dnsAutoBtn:pressed, #dnsAliBtn:pressed, #dnsTencentBtn:pressed,
+#dns114Btn:pressed, #dnsGoogleBtn:pressed, #dnsBaiduBtn:pressed {
+    background: #E1EAFB;
+}
+
+#dnsAutoBtn:disabled, #dnsAliBtn:disabled, #dnsTencentBtn:disabled,
+#dns114Btn:disabled, #dnsGoogleBtn:disabled, #dnsBaiduBtn:disabled {
     color: #B6BFCC;
 }
 

@@ -208,7 +208,8 @@ MainWindow::MainWindow(QWidget *parent)
                     || m_task == Task::DiskHealth || m_task == Task::HwInfo
                     || m_task == Task::ProcessList || m_task == Task::DiskUsage
                     || m_task == Task::UninstallList || m_task == Task::DriverList
-                    || m_task == Task::HostsRead || m_task == Task::HostsWrite)
+                    || m_task == Task::HostsRead || m_task == Task::HostsWrite
+                    || m_task == Task::DnsRead || m_task == Task::DnsWrite)
                     return;
                 appendLog(text);
             });
@@ -294,7 +295,7 @@ void MainWindow::setupTheme()
     ui->btn_netWorkTest->setIcon(tileIcon(UiIcons::Icon::Activity));
     ui->btn_ports->setIcon(tileIcon(UiIcons::Icon::Link));
     ui->btn_hosts->setIcon(tileIcon(UiIcons::Icon::Link));
-    ui->btn_dns->setIcon(grayIcon(UiIcons::Icon::Network));
+    ui->btn_dns->setIcon(tileIcon(UiIcons::Icon::Network));
 
     // 系统维护
     ui->btn_cleaner->setIcon(tileIcon(UiIcons::Icon::Clean));
@@ -530,10 +531,6 @@ void MainWindow::setupPlaceholders()
                         "文件哈希",
                         "将计算文件的 MD5 / SHA1 / SHA256，"
                         "用于校验下载文件是否完整、是否被篡改。");
-
-    wirePlaceholderTile(ui->btn_dns,
-                        "DNS 切换",
-                        "将内置常用 DNS 服务器，一键切换并立即测试解析速度。");
 }
 
 // ---------------------------------------------------------------- 网络模块
@@ -609,6 +606,30 @@ void MainWindow::setupNetwork()
             this, &MainWindow::saveHosts);
     connect(ui->hostsRestoreBtn, &QAbstractButton::clicked,
             this, &MainWindow::restoreHosts);
+
+    // DNS 切换
+    connect(ui->btn_dns, &QAbstractButton::clicked,
+            this, &MainWindow::runDnsRead);
+
+    const QList<QPair<QPushButton *, QPair<QString, QString>>> dnsPresets = {
+        {ui->dnsAutoBtn,    {QString(),                        QStringLiteral("自动获取")}},
+        {ui->dnsAliBtn,     {QStringLiteral("223.5.5.5,223.6.6.6"),
+                             QStringLiteral("阿里 DNS")}},
+        {ui->dnsTencentBtn, {QStringLiteral("119.29.29.29,182.254.116.116"),
+                             QStringLiteral("腾讯 DNS")}},
+        {ui->dns114Btn,     {QStringLiteral("114.114.114.114,114.114.115.115"),
+                             QStringLiteral("114 DNS")}},
+        {ui->dnsGoogleBtn,  {QStringLiteral("8.8.8.8,8.8.4.4"),
+                             QStringLiteral("Google DNS")}},
+        {ui->dnsBaiduBtn,   {QStringLiteral("180.76.76.76"),
+                             QStringLiteral("百度 DNS")}}
+    };
+    for (const auto &preset : dnsPresets) {
+        const QString servers = preset.second.first;
+        const QString label = preset.second.second;
+        connect(preset.first, &QAbstractButton::clicked, this,
+                [this, servers, label] { applyDns(servers, label); });
+    }
 }
 
 /**
@@ -683,6 +704,12 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::HostsWrite:
         handleHostsWrite();
+        break;
+    case Task::DnsRead:
+        handleDnsRead();
+        break;
+    case Task::DnsWrite:
+        handleDnsWrite();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -3007,6 +3034,247 @@ void MainWindow::handleHostsWrite()
         ui->hostsRestoreBtn->setEnabled(true);
         ui->hostsSummary->setText(QStringLiteral("未写入（%1）").arg(message));
     }
+}
+
+// ---------------------------------------------------------------- DNS 切换
+
+void MainWindow::runDnsRead()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/dns.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少 DNS 脚本",
+                    "未找到 ps1\\dns.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    appendLog("正在读取当前 DNS 配置……");
+
+    ui->dnsSummary->setText(QStringLiteral("正在读取……"));
+    for (QPushButton *button : {ui->dnsAutoBtn, ui->dnsAliBtn,
+                                ui->dnsTencentBtn, ui->dns114Btn,
+                                ui->dnsGoogleBtn, ui->dnsBaiduBtn})
+        button->setEnabled(false);
+    ui->cardDns->setVisible(true);
+
+    QScrollArea *page = ui->pageNetwork;
+    QTimer::singleShot(0, this, [page, this] {
+        page->ensureWidgetVisible(ui->cardDns);
+    });
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), QStringLiteral("read")
+    };
+
+    m_task = Task::DnsRead;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleDnsRead()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("DNS_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("读取 DNS 配置失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->dnsSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取 DNS 配置失败",
+                    "未能从 PowerShell 获取当前 DNS 配置，请稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    const int index = data.value(QStringLiteral("index")).toInt(-1);
+    const QString alias = data.value(QStringLiteral("alias")).toString();
+    const QString connection = data.value(QStringLiteral("connection")).toString();
+    const bool autoMode = data.value(QStringLiteral("auto")).toBool();
+
+    // 只有一项时 PowerShell 可能输出对象而不是数组
+    QStringList servers;
+    const QJsonValue value = data.value(QStringLiteral("dns"));
+    if (value.isArray()) {
+        for (const QJsonValue &server : value.toArray())
+            servers << server.toString();
+    } else if (value.isString()) {
+        servers << value.toString();
+    }
+
+    m_dnsAlias = alias;
+
+    QString summary;
+    if (index < 0 || alias.isEmpty()) {
+        summary = QStringLiteral(
+            "未找到承载默认路由的网卡，暂不能切换 DNS。\n"
+            "请先连接网络后重新打开本功能。");
+        ui->dnsSummary->setText(summary);
+        appendLog("-------------------");
+        appendLog("未找到承载默认路由的网卡。");
+        return;
+    }
+
+    const QString dnsText = (servers.isEmpty() || autoMode)
+                                ? QStringLiteral("自动获取（由路由器分配）")
+                                : servers.join(QStringLiteral(" / "));
+    summary = QStringLiteral("当前网卡：%1%2\n当前 DNS：%3")
+                  .arg(alias,
+                       connection.isEmpty() ? QString()
+                                            : QStringLiteral("（%1）").arg(connection),
+                       dnsText);
+    ui->dnsSummary->setText(summary);
+
+    for (QPushButton *button : {ui->dnsAutoBtn, ui->dnsAliBtn,
+                                ui->dnsTencentBtn, ui->dns114Btn,
+                                ui->dnsGoogleBtn, ui->dnsBaiduBtn})
+        button->setEnabled(true);
+
+    appendLog("-------------------");
+    appendLog(QStringLiteral("网卡 %1 当前 DNS：%2")
+                  .arg(alias, servers.isEmpty() ? QStringLiteral("自动获取")
+                                               : servers.join(QStringLiteral(", "))));
+}
+
+void MainWindow::applyDns(const QString &servers, const QString &label)
+{
+    if (m_dnsAlias.isEmpty()) {
+        showMessage("请先读取当前配置",
+                    "还没有获取到承载默认路由的网卡，请先点击「DNS 切换」磁贴读取一次。",
+                    QMessageBox::Information);
+        return;
+    }
+
+    const QString target = servers.isEmpty()
+                               ? QStringLiteral("自动获取（由路由器分配）")
+                               : servers.split(QLatin1Char(','))
+                                     .join(QStringLiteral(" / "));
+
+    if (QMessageBox::question(this, QStringLiteral("切换 DNS"),
+                              QStringLiteral("将把「%1」的 DNS 设置为：\n%2（%3）\n\n"
+                                             "切换需要管理员权限，确定继续？")
+                                  .arg(m_dnsAlias, label, target))
+        != QMessageBox::Yes)
+        return;
+
+    runDnsWrite(servers);
+}
+
+void MainWindow::runDnsWrite(const QString &servers)
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/dns.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少 DNS 脚本",
+                    "未找到 ps1\\dns.ps1，无法切换。", QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    appendLog("正在切换 DNS，若弹出权限提示请选择“是”……");
+
+    ui->dnsSummary->setText(QStringLiteral("正在切换……"));
+    for (QPushButton *button : {ui->dnsAutoBtn, ui->dnsAliBtn,
+                                ui->dnsTencentBtn, ui->dns114Btn,
+                                ui->dnsGoogleBtn, ui->dnsBaiduBtn})
+        button->setEnabled(false);
+
+    QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), QStringLiteral("apply")
+    };
+    if (servers.isEmpty()) {
+        args << QStringLiteral("-Auto");
+    } else {
+        args << QStringLiteral("-Servers") << servers;
+    }
+
+    m_task = Task::DnsWrite;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleDnsWrite()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("DNS_WRITE_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+
+    QString code;
+    if (!payload.isEmpty() && parseError.error == QJsonParseError::NoError
+        && document.isObject()) {
+        code = document.object().value(QStringLiteral("code")).toString();
+    }
+
+    if (code == QLatin1String("applied")) {
+        appendLog("-------------------");
+        appendLog("DNS 已切换，正在刷新解析缓存。");
+        showMessage("DNS 已切换", QStringLiteral("新的 DNS 已生效，正在重新读取当前配置。"));
+        runDnsRead();
+        return;
+    }
+
+    QString message;
+    if (code == QLatin1String("canceled")) {
+        message = QStringLiteral("已取消提权，DNS 未修改。");
+    } else if (code == QLatin1String("no-adapter")) {
+        message = QStringLiteral("没有找到承载默认路由的网卡，请先连接网络。");
+    } else if (code == QLatin1String("no-servers")) {
+        message = QStringLiteral("没有提供可用的 DNS 地址。");
+    } else if (code == QLatin1String("no-result")) {
+        message = QStringLiteral("提权进程没有返回结果，DNS 可能未修改。");
+    } else if (code == QLatin1String("error")) {
+        message = QStringLiteral("设置 DNS 时出错，可能是权限不足或网卡不支持。");
+    } else {
+        message = QStringLiteral("未能解析切换结果，请重新读取 DNS 确认当前配置。");
+    }
+
+    appendLog("-------------------");
+    appendLog(message);
+    if (!code.isEmpty() && code != QLatin1String("error"))
+        appendLog(QStringLiteral("（返回码：%1）").arg(code));
+
+    showMessage("切换 DNS 失败", message, QMessageBox::Warning);
+
+    ui->dnsSummary->setText(message);
+    for (QPushButton *button : {ui->dnsAutoBtn, ui->dnsAliBtn,
+                                ui->dnsTencentBtn, ui->dns114Btn,
+                                ui->dnsGoogleBtn, ui->dnsBaiduBtn})
+        button->setEnabled(!m_dnsAlias.isEmpty());
 }
 
 // ---------------------------------------------------------------- 通用工具

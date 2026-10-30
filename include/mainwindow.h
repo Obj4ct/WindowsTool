@@ -53,7 +53,9 @@ private:
         UninstallList,   ///< 已安装程序清单（uninstall.ps1）
         DriverList,      ///< 驱动清单（drivers.ps1）
         HostsRead,       ///< 读取 Hosts（hosts.ps1 -Action read）
-        HostsWrite       ///< 写入/恢复 Hosts（hosts.ps1 -Action save/restore）
+        HostsWrite,      ///< 写入/恢复 Hosts（hosts.ps1 -Action save/restore）
+        DnsRead,         ///< 读取当前网卡 DNS（dns.ps1 -Action read）
+        DnsWrite         ///< 切换 DNS（dns.ps1 -Action apply）
     };
 
     void setupTheme();
@@ -151,11 +153,21 @@ private:
     void runHostsWrite(const QString &action, const QString &source);
     void handleHostsWrite();
 
+    // DNS 切换
+    void runDnsRead();
+    void handleDnsRead();
+    void applyDns(const QString &servers, const QString &label);
+    void runDnsWrite(const QString &servers);
+    void handleDnsWrite();
+
     /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
     void showSystemResultCard(QWidget *card);
 
     /** 恢复备份后用于提示文案 */
     bool m_hostsRestore = false;
+
+    /** 当前默认路由网卡的显示名，DNS 切换时用于提示 */
+    QString m_dnsAlias;
 
     // 工具方法
     void appendLog(const QString &text);
