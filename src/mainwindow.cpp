@@ -252,13 +252,16 @@ void MainWindow::setupNetwork()
     // 刷新 DNS
     connect(ui->btn_refreshDNS, &QPushButton::clicked, this, [this]() {
         if (!confirmAction("刷新网络配置",
-                           "此操作将重置全部活动网卡的 DNS 配置，并清除本机 DNS 解析缓存。"
-                           "执行期间网络可能短暂不可用。\n\n是否继续？"))
+                           "此操作会把承载默认路由的物理网卡恢复为自动获取 DNS，"
+                           "并清除本机 DNS 解析缓存；静态 IP 配置与 VPN/虚拟网卡不会被改动。"
+                           "执行前会自动备份当前网络配置。\n\n执行期间网络可能短暂不可用，是否继续？"))
             return;
+
+        ++m_flow;
 
         clearLog();
         appendLog("正在刷新网络配置，请稍候……");
-        runFixDns();
+        runFixDns(false);
     });
 
     // 刷新 winsock
@@ -278,13 +281,18 @@ void MainWindow::setupNetwork()
             return;
         }
 
+        ++m_flow;
+
         clearLog();
         appendLog("正在重置 Winsock，请稍候……");
+        m_task = Task::WinsockReset;
         m_runner->runBat("winsockReset.bat");
     });
 
     // 网络测试
     connect(ui->btn_netWorkTest, &QAbstractButton::clicked, this, [this]() {
+        ++m_flow;
+
         clearLog();
         appendLog("正在测试网络连通性……");
         m_task = Task::PingTest;
@@ -309,6 +317,25 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::DnsCheck:
         handleDnsCheck();
+        break;
+    case Task::FixDnsAuto:
+        askNetworkRecovered();
+        break;
+    case Task::FixDnsManual:
+        appendLog("-------------------");
+        appendLog("网络配置刷新完成");
+        break;
+    case Task::Cleaner:
+        appendLog("-------------------");
+        appendLog("系统临时文件清理完成");
+        break;
+    case Task::WinsockReset:
+        appendLog("-------------------");
+        appendLog("Winsock 重置完成，请重启计算机后生效");
+        break;
+    case Task::FixWhite:
+        appendLog("-------------------");
+        appendLog("桌面图标缓存重建完成");
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -336,6 +363,8 @@ void MainWindow::onTaskFailed(const QString &reason)
  */
 void MainWindow::startAutoCheck()
 {
+    ++m_flow;
+
     clearLog();
     appendLog("请等待，正在检测网络，电脑可能会出现短暂卡顿，此时请勿进行任何操作……");
 
@@ -347,13 +376,17 @@ void MainWindow::startAutoCheck()
 void MainWindow::handleAutoCheckPing()
 {
     const QString output = m_runner->collectedOutput();
+    const int flow = m_flow;
 
     if (isPingHostUnknown(output)) {
         appendLog("-------------------");
         appendLog("ping 错误：找不到主机，正在尝试修复网络配置……");
 
-        // 稍作停顿让用户看清提示，再进入 DNS 检查
-        QTimer::singleShot(600, this, [this]() {
+        // 稍作停顿让用户看清提示，再进入 DNS 检查。
+        // 期间用户若点了别的功能，世代号变化，这里直接放弃。
+        QTimer::singleShot(600, this, [this, flow]() {
+            if (flow != m_flow)
+                return;
             m_task = Task::DnsCheck;
             m_runner->runBat("dnsCheck.bat");
         });
@@ -370,7 +403,9 @@ void MainWindow::handleAutoCheckPing()
     appendLog("-------------------");
     appendLog("网络连通性正常，正在检测 DNS 配置……");
 
-    QTimer::singleShot(600, this, [this]() {
+    QTimer::singleShot(600, this, [this, flow]() {
+        if (flow != m_flow)
+            return;
         m_task = Task::DnsCheck;
         m_runner->runBat("dnsCheck.bat");
     });
@@ -404,12 +439,17 @@ void MainWindow::handlePingTest()
 void MainWindow::handleDnsCheck()
 {
     const QString output = m_runner->collectedOutput();
+    const int flow = m_flow;
 
     if (isDnsLookupFailed(output)) {
         appendLog("-------------------");
         appendLog("网络配置出现问题了（无法找到 DNS 服务器），正在尝试修复……");
 
-        QTimer::singleShot(600, this, &MainWindow::runFixDns);
+        QTimer::singleShot(600, this, [this, flow]() {
+            if (flow != m_flow)
+                return;
+            runFixDns(true);
+        });
         return;
     }
 
@@ -419,10 +459,14 @@ void MainWindow::handleDnsCheck()
 
 /**
  * 执行 DNS 修复脚本。
- * fixDNS.bat 会自行申请管理员权限并重新拉起进程，因此本进程会很快返回，
- * 这里在脚本结束后等待一段时间，再询问用户网络是否恢复。
+ *
+ * fixDNS.bat 会自行申请管理员权限，并用 -Wait 等待提权后的实例执行完毕，
+ * 因此这里的 finished 信号就代表修复真正结束——不再靠固定延时猜测。
+ *
+ * @param askAfter true 表示自动检测触发的修复，结束后询问用户是否恢复；
+ *                 false 表示用户手动刷新，只记录日志。
  */
-void MainWindow::runFixDns()
+void MainWindow::runFixDns(bool askAfter)
 {
     if (!batExists("fixDNS.bat")) {
         showMessage("缺少脚本文件",
@@ -436,10 +480,8 @@ void MainWindow::runFixDns()
     appendLog("正在刷新网络配置，请稍候……");
     appendLog("-------------------");
 
+    m_task = askAfter ? Task::FixDnsAuto : Task::FixDnsManual;
     m_runner->runBat("fixDNS.bat");
-
-    // 等待修复脚本（会弹 UAC 并重新拉起）执行完毕
-    QTimer::singleShot(5000, this, &MainWindow::askNetworkRecovered);
 }
 
 void MainWindow::askNetworkRecovered()
@@ -467,6 +509,8 @@ void MainWindow::askNetworkRecovered()
 
 void MainWindow::showNetworkInfo()
 {
+    ++m_flow;
+
     clearLog();
     appendLog("正在获取网络信息……");
     m_task = Task::NetInfo;
@@ -487,6 +531,8 @@ void MainWindow::setupSystem()
             return;
         }
 
+        ++m_flow;
+
         clearLog();
         appendLog("-------------------");
         appendLog("即将清理系统临时文件。此操作不会影响个人文档。");
@@ -494,6 +540,7 @@ void MainWindow::setupSystem()
         appendLog("系统将弹出权限请求窗口，请选择「是」以继续。"
                   "清理时长取决于临时文件数量，请耐心等待。");
 
+        m_task = Task::Cleaner;
         m_runner->runBat("cleaner.bat");
     });
 
@@ -507,8 +554,11 @@ void MainWindow::setupSystem()
             return;
         }
 
+        ++m_flow;
+
         clearLog();
         appendLog("正在重建桌面图标缓存，期间屏幕会短暂黑屏，请稍候……");
+        m_task = Task::FixWhite;
         m_runner->runBat("fixWhite.bat");
     });
 }

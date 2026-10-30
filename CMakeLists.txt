@@ -15,12 +15,8 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
-# Widgets 提供 GUI。
-# 注意：源码里 #include <QtTest/QTest> 只用到 QTest::qWait，
-# 该符号由 QtCore 导出（qtestsupport_core.h 中 Q_CORE_EXPORT），
-# 因此无需链接 Qt5::Test —— 链接后 exe 也不会导入 Qt5Test.dll，
-# 反而让输出目录多背一个 DLL。
-# QtTest 头文件仍可通过 Qt5::Core 的 include 根目录找到。
+# Widgets 提供 GUI。主程序不依赖 QtTest；
+# 单元测试目标在 BUILD_TESTING 打开时单独链接 Qt5::Test。
 find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets)
 
 set(APP_SOURCES

@@ -35,7 +35,12 @@ private:
         PingAutoCheck,   ///< 自动检测流程中的 ping
         PingTest,        ///< 用户点击"网络测试"的 ping
         DnsCheck,        ///< DNS 解析检查
-        NetInfo          ///< ipconfig
+        FixDnsAuto,      ///< 自动检测触发的修复，完成后询问用户
+        FixDnsManual,    ///< 用户手动刷新网络配置，完成后仅记录日志
+        NetInfo,         ///< ipconfig
+        Cleaner,         ///< 清理系统临时文件
+        WinsockReset,    ///< 重置 Winsock
+        FixWhite         ///< 重建桌面图标缓存
     };
 
     void setupTheme();
@@ -53,7 +58,7 @@ private:
     void handleAutoCheckPing();
     void handlePingTest();
     void handleDnsCheck();
-    void runFixDns();
+    void runFixDns(bool askAfter);
     void askNetworkRecovered();
 
     // 工具方法
@@ -69,6 +74,15 @@ private:
     Ui::MainWindow *ui;
     ProcessRunner *m_runner;
     Task m_task = Task::None;
+
+    /**
+     * 流程世代号。
+     *
+     * 自动检测用 QTimer 串联多步，期间用户可能点了别的功能。每次新操作
+     * 都会让它自增，尚未触发的定时器发现世代号不一致就直接放弃，
+     * 避免旧流程覆盖新任务或弹出无关弹窗。
+     */
+    int m_flow = 0;
 };
 
 #endif // MAINWINDOW_H

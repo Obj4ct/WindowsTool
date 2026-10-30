@@ -5,8 +5,7 @@ greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 CONFIG += c++17
 # win7下运行
 
-# 源码里 #include <QtTest/QTest> 只用到 QTest::qWait，
-# 该符号由 QtCore 导出，因此不需要 QT += test（否则会多链一个 Qt5Test.dll）
+# 主程序不依赖 QtTest；单元测试由 CMake 目标单独链接 Qt5::Test
 
 # 源文件为 UTF-8 无 BOM，MSVC 默认按 GBK 解码会导致中文字符串字面量断裂
 win32-msvc: QMAKE_CXXFLAGS += /utf-8
