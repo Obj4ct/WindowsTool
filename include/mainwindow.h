@@ -49,6 +49,7 @@ private:
         LargeFiles,      ///< 大文件扫描（largefiles.ps1）
         DiskHealth,      ///< 磁盘健康检测（diskhealth.ps1）
         HwInfo,          ///< 硬件信息快照（hwinfo.ps1）
+        Battery,         ///< 电池健康（battery.ps1）
         ProcessList,     ///< 进程列表（processes.ps1）
         DiskUsage,       ///< 目录占用分析（diskusage.ps1）
         UninstallList,   ///< 已安装程序清单（uninstall.ps1）
@@ -123,6 +124,10 @@ private:
     void handleHwInfo();
     void addHwRow(const QString &category, const QString &title,
                   const QString &detail);
+
+    // 电池健康（只读）
+    void runBattery();
+    void handleBattery();
 
     // 进程列表（只读）
     void runProcessList();

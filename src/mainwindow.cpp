@@ -181,6 +181,33 @@ QString formatRate(double bytesPerSec)
     return QString::number(qMax(0.0, bytesPerSec), 'f', 0) + QStringLiteral(" B");
 }
 
+/** 电池容量（mWh）→ "56.0 Wh"，0 表示系统未提供 */
+QString formatCapacity(qint64 milliwattHours)
+{
+    if (milliwattHours <= 0)
+        return QStringLiteral("—");
+    return QString::number(static_cast<double>(milliwattHours) / 1000.0, 'f', 1)
+           + QStringLiteral(" Wh");
+}
+
+/** Win32_Battery.BatteryStatus → 中文状态 */
+QString batteryStatusLabel(int status)
+{
+    switch (status) {
+    case 1:  return QStringLiteral("放电中");
+    case 2:  return QStringLiteral("已接通电源（未充电）");
+    case 3:  return QStringLiteral("已充满");
+    case 4:  return QStringLiteral("电量低");
+    case 5:  return QStringLiteral("电量严重不足");
+    case 6:  return QStringLiteral("充电中");
+    case 7:  return QStringLiteral("充电中（电量高）");
+    case 8:  return QStringLiteral("充电中（电量低）");
+    case 9:  return QStringLiteral("充电中（电量严重不足）");
+    case 11: return QStringLiteral("部分充电");
+    default: return QStringLiteral("未知");
+    }
+}
+
 /** 把样式表文件读入并应用到整个应用 */
 bool applyStyleSheet(QApplication &app)
 {
@@ -218,6 +245,7 @@ MainWindow::MainWindow(QWidget *parent)
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
                     || m_task == Task::DiskHealth || m_task == Task::HwInfo
+                    || m_task == Task::Battery
                     || m_task == Task::ProcessList || m_task == Task::DiskUsage
                     || m_task == Task::UninstallList || m_task == Task::UninstallAction
                     || m_task == Task::DriverList
@@ -321,7 +349,7 @@ void MainWindow::setupTheme()
     // 硬件监控
     ui->btn_diskHealth->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
     ui->btn_hwinfo->setIcon(tileIcon(UiIcons::Icon::Monitor));
-    ui->btn_battery->setIcon(grayIcon(UiIcons::Icon::Activity));
+    ui->btn_battery->setIcon(tileIcon(UiIcons::Icon::Activity));
     ui->btn_monitor->setIcon(tileIcon(UiIcons::Icon::Activity));
 
     // 系统管理
@@ -528,11 +556,6 @@ void MainWindow::setupPlaceholders()
                         "将读取最近一次崩溃的转储文件，定位可能引发蓝屏的"
                         "驱动或硬件，并给出处理建议。");
 
-    wirePlaceholderTile(ui->btn_battery,
-                        "电池健康",
-                        "将读取电池的设计容量与当前容量，评估损耗程度，"
-                        "并展示最近的充电记录。");
-
     wirePlaceholderTile(ui->btn_dup,
                         "重复文件",
                         "将按文件内容找出重复文件，确认后安全释放磁盘空间。");
@@ -695,6 +718,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::HwInfo:
         handleHwInfo();
+        break;
+    case Task::Battery:
+        handleBattery();
         break;
     case Task::ProcessList:
         handleProcessList();
@@ -967,6 +993,10 @@ void MainWindow::setupSystem()
     // 硬件信息快照（只读）
     connect(ui->btn_hwinfo, &QAbstractButton::clicked,
             this, &MainWindow::runHwInfo);
+
+    // 电池健康（只读）
+    connect(ui->btn_battery, &QAbstractButton::clicked,
+            this, &MainWindow::runBattery);
 
     // 实时监控：1 秒采样一次，直接走 Win32 API
     m_monitor = new SysMonitor(this);
@@ -1572,6 +1602,7 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardDiskUsage->setVisible(card == ui->cardDiskUsage);
     ui->cardUninstall->setVisible(card == ui->cardUninstall);
     ui->cardDrivers->setVisible(card == ui->cardDrivers);
+    ui->cardBattery->setVisible(card == ui->cardBattery);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
@@ -1580,7 +1611,8 @@ void MainWindow::showSystemResultCard(QWidget *card)
         page = ui->pageManage;
     else if (card == ui->cardLargeFiles || card == ui->cardDiskUsage)
         page = ui->pageTools;
-    else if (card == ui->cardDiskHealth || card == ui->cardHwinfo)
+    else if (card == ui->cardDiskHealth || card == ui->cardHwinfo
+             || card == ui->cardBattery)
         page = ui->pageHardware;
 
     QTimer::singleShot(0, this, [page, card] {
@@ -2172,6 +2204,132 @@ void MainWindow::addHwRow(const QString &category, const QString &title,
     layout->addLayout(text, 1);
 
     ui->hwinfoRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 电池健康
+
+void MainWindow::runBattery()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/battery.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少电池脚本",
+                    "未找到 ps1\\battery.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在读取电池信息，请稍候……");
+
+    ui->batterySummary->setText(QStringLiteral("正在读取电池信息……"));
+    showSystemResultCard(ui->cardBattery);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::Battery;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleBattery()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("BATTERY_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("读取电池信息失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->batterySummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取电池信息失败",
+                    "未能从 PowerShell 获取有效的电池信息。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+
+    if (!data.value(QStringLiteral("present")).toBool()) {
+        // 台式机常见：没有电池，只保留说明，不显示空的数据行
+        ui->batteryRows->setVisible(false);
+        ui->batterySummary->setText(
+            QStringLiteral("未检测到电池，当前设备可能使用台式机电源供电，"
+                           "因此无法评估电池损耗。"));
+        appendLog("-------------------");
+        appendLog("未检测到电池，跳过电池健康评估。");
+        return;
+    }
+
+    ui->batteryRows->setVisible(true);
+
+    const QString name = data.value(QStringLiteral("name")).toString();
+    const qint64 design = static_cast<qint64>(
+        data.value(QStringLiteral("design")).toDouble());
+    const qint64 full = static_cast<qint64>(
+        data.value(QStringLiteral("full")).toDouble());
+    const qint64 cycles = static_cast<qint64>(
+        data.value(QStringLiteral("cycles")).toDouble());
+    const int charge = data.value(QStringLiteral("charge")).toInt();
+    const int status = data.value(QStringLiteral("status")).toInt();
+    const int runtime = data.value(QStringLiteral("runtime")).toInt();
+
+    ui->batteryNameVal->setText(name.isEmpty() ? QStringLiteral("—") : name);
+    ui->batteryDesignVal->setText(formatCapacity(design));
+    ui->batteryFullVal->setText(formatCapacity(full));
+    ui->batteryChargeVal->setText(charge > 0 ? QStringLiteral("%1%").arg(charge)
+                                             : QStringLiteral("—"));
+
+    QString statusText = batteryStatusLabel(status);
+    if (status == 1 && runtime > 0 && runtime < 100000)
+        statusText += QStringLiteral("（预计剩余 %1 小时 %2 分）")
+                          .arg(runtime / 60)
+                          .arg(runtime % 60);
+    ui->batteryStatusVal->setText(statusText);
+
+    ui->batteryCycleVal->setText(cycles > 0 ? QStringLiteral("%1 次").arg(cycles)
+                                            : QStringLiteral("系统未提供"));
+
+    QString summary;
+    if (design > 0 && full > 0) {
+        const double health = full * 100.0 / design;
+        const double wear = 100.0 - health;
+        summary = QStringLiteral("健康度 %1%（损耗 %2%）")
+                      .arg(health, 0, 'f', 1)
+                      .arg(qMax(0.0, wear), 0, 'f', 1);
+        if (health < 60.0)
+            summary += QStringLiteral(" · 电池损耗较大，建议考虑更换");
+        else if (health < 80.0)
+            summary += QStringLiteral(" · 容量已有明显衰减");
+    } else {
+        summary = QStringLiteral("系统未提供完整的容量数据，无法计算健康度");
+    }
+
+    ui->batterySummary->setText(summary);
+
+    appendLog("-------------------");
+    appendLog(summary);
 }
 
 // ---------------------------------------------------------------- 进程列表

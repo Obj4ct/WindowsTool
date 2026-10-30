@@ -100,7 +100,7 @@
 #cardSystem, #cardHealth, #cardHardware, #cardManage, #cardTools,
 #cardStartup, #cardPorts, #cardLargeFiles, #cardDiskHealth, #cardHwinfo,
 #cardProcesses, #cardDiskUsage, #cardUninstall, #cardDrivers, #cardHosts,
-#cardDns, #cardMonitor, #cardShortcuts {
+#cardDns, #cardMonitor, #cardShortcuts, #cardBattery {
     background: #FFFFFF;
     border: 1px solid #E6EAF2;
     border-radius: 14px;
@@ -110,7 +110,7 @@
 #cardTitleSys, #cardTitleHardware, #cardTitleManage, #cardTitleTools,
 #healthTitle, #startupTitle, #portsTitle, #largeFilesTitle, #diskHealthTitle,
 #hwinfoTitle, #processesTitle, #diskUsageTitle, #uninstallTitle, #driversTitle,
-#hostsTitle, #dnsTitle, #monitorTitle, #cardTitleTool {
+#hostsTitle, #dnsTitle, #monitorTitle, #batteryTitle, #cardTitleTool {
     color: #1B2637;
     font-size: 15px;
     font-weight: 600;
@@ -689,6 +689,28 @@ QToolButton[placeholder="true"]:pressed {
 
 #monitorStopBtn:disabled {
     color: #B6BFCC;
+}
+
+/* ---------------- 电池健康 ---------------- */
+#batterySummary {
+    color: #4A576F;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#batteryNameLabel, #batteryDesignLabel, #batteryFullLabel,
+#batteryHealthLabel, #batteryChargeLabel, #batteryStatusLabel,
+#batteryCycleLabel {
+    color: #5A677D;
+    font-size: 13px;
+}
+
+#batteryNameVal, #batteryDesignVal, #batteryFullVal,
+#batteryHealthVal, #batteryChargeVal, #batteryStatusVal,
+#batteryCycleVal {
+    color: #2A3648;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 /* ---------------- 日志控制台 ---------------- */
