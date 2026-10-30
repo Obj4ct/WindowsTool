@@ -5,15 +5,23 @@
 #include "uiicons.h"
 
 #include <QAbstractButton>
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHBoxLayout>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QLabel>
+#include <QLayoutItem>
 #include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
+#include <QStyle>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTimer>
@@ -37,6 +45,29 @@ constexpr auto NavInactive = "#93A0B8";
 const QColor cAccent(Theme::Accent);
 const QColor cAccentDark(Theme::AccentDark);
 const QColor cBadgeBg(Theme::BadgeBg);
+
+/** MB → "x.x GB" */
+QString formatGb(qint64 mb)
+{
+    return QString::number(static_cast<double>(mb) / 1024.0, 'f', 1);
+}
+
+/** 运行时长：秒 → "x 天 y 小时" / "x 小时 y 分钟" */
+QString formatUptime(qint64 seconds)
+{
+    if (seconds <= 0)
+        return QStringLiteral("不足 1 分钟");
+
+    const qint64 days = seconds / 86400;
+    const qint64 hours = (seconds % 86400) / 3600;
+    const qint64 minutes = (seconds % 3600) / 60;
+
+    if (days > 0)
+        return QStringLiteral("%1 天 %2 小时").arg(days).arg(hours);
+    if (hours > 0)
+        return QStringLiteral("%1 小时 %2 分钟").arg(hours).arg(minutes);
+    return QStringLiteral("%1 分钟").arg(minutes);
+}
 
 /** 把样式表文件读入并应用到整个应用 */
 bool applyStyleSheet(QApplication &app)
@@ -68,7 +99,12 @@ MainWindow::MainWindow(QWidget *parent)
     setupSystem();
 
     connect(m_runner, &ProcessRunner::outputReceived,
-            this, [this](const QString &text) { appendLog(text); });
+            this, [this](const QString &text) {
+                // 体检脚本只输出一行 JSON 标记，不把原始数据刷进控制台
+                if (m_task == Task::HealthCheck)
+                    return;
+                appendLog(text);
+            });
     connect(m_runner, &ProcessRunner::finished,
             this, &MainWindow::onTaskFinished);
     connect(m_runner, &ProcessRunner::failed,
@@ -134,11 +170,12 @@ void MainWindow::setupTheme()
     ui->btn_netWorkTest->setIcon(tileIcon(UiIcons::Icon::Activity));
     ui->btn_cleaner->setIcon(tileIcon(UiIcons::Icon::Clean));
     ui->btn_fixWhite->setIcon(tileIcon(UiIcons::Icon::Picture));
+    ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
     for (QToolButton *b : {ui->btn_autoCheck, ui->btn_showNetWork,
                             ui->btn_netWorkTest, ui->btn_cleaner,
-                            ui->btn_fixWhite}) {
+                            ui->btn_fixWhite, ui->btn_healthCheck}) {
         b->setIconSize(QSize(30, 30));
     }
 
@@ -336,6 +373,9 @@ void MainWindow::onTaskFinished(int exitCode)
     case Task::FixWhite:
         appendLog("-------------------");
         appendLog("桌面图标缓存重建完成");
+        break;
+    case Task::HealthCheck:
+        handleHealthCheck();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -561,6 +601,258 @@ void MainWindow::setupSystem()
         m_task = Task::FixWhite;
         m_runner->runBat("fixWhite.bat");
     });
+
+    // 电脑体检
+    connect(ui->btn_healthCheck, &QAbstractButton::clicked,
+            this, &MainWindow::runHealthCheck);
+}
+
+void MainWindow::runHealthCheck()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/healthcheck.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少体检脚本",
+                    "未找到 ps1\\healthcheck.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在采集系统信息，请稍候……");
+
+    // 清空上一次的体检结果
+    while (QLayoutItem *item = ui->healthRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->healthSummary->setText(QStringLiteral("正在体检……"));
+    ui->healthSummary->setProperty("state", QString());
+    ui->healthSummary->style()->unpolish(ui->healthSummary);
+    ui->healthSummary->style()->polish(ui->healthSummary);
+    ui->cardHealth->setVisible(true);
+
+    // 直接用 PowerShell 的 exe + 参数列表启动，不再把整条命令行交给 cmd.exe。
+    // 整串命令行里的双引号会先被 cmd.exe 解析、再被 QProcess 做参数转义，
+    // PowerShell 最终拿到的 -File 值会带上字面引号，报"路径中具有非法字符"。
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::HealthCheck;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleHealthCheck()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("HEALTHCHECK_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("体检失败：未能读取系统信息。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        showMessage("体检失败",
+                    "未能从 PowerShell 获取有效的系统信息。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    const int build = data.value(QStringLiteral("os_build")).toInt();
+    const QString osVersion = data.value(QStringLiteral("os_version")).toString();
+    const qint64 uptime = static_cast<qint64>(
+        data.value(QStringLiteral("uptime_seconds")).toDouble());
+    const qint64 memTotal = static_cast<qint64>(
+        data.value(QStringLiteral("mem_total_mb")).toDouble());
+    const qint64 memFree = static_cast<qint64>(
+        data.value(QStringLiteral("mem_free_mb")).toDouble());
+    const QString diskLetter = data.value(QStringLiteral("disk_letter")).toString();
+    const qint64 diskTotal = static_cast<qint64>(
+        data.value(QStringLiteral("disk_total_mb")).toDouble());
+    const qint64 diskFree = static_cast<qint64>(
+        data.value(QStringLiteral("disk_free_mb")).toDouble());
+    const int startupCount = data.value(QStringLiteral("startup_count")).toInt();
+    const bool pendingReboot = data.value(QStringLiteral("pending_reboot")).toBool();
+    const bool proxyEnabled = data.value(QStringLiteral("proxy_enabled")).toBool();
+
+    int warnCount = 0;
+    int riskCount = 0;
+    int total = 0;
+    auto add = [this, &warnCount, &riskCount, &total](const QString &state,
+                                                     const QString &name,
+                                                     const QString &detail) {
+        ++total;
+        if (state == QLatin1String("warn"))
+            ++warnCount;
+        else if (state == QLatin1String("risk"))
+            ++riskCount;
+        addHealthRow(state, name, detail);
+    };
+
+    // 操作系统
+    if (build > 0) {
+        QString name = build >= 22000 ? QStringLiteral("Windows 11")
+                                       : QStringLiteral("Windows 10");
+        QString detail = name;
+        if (!osVersion.isEmpty())
+            detail += QStringLiteral(" · ") + osVersion;
+        detail += QStringLiteral(" · Build %1").arg(build);
+        add(QStringLiteral("ok"), QStringLiteral("操作系统"), detail);
+    } else {
+        add(QStringLiteral("warn"), QStringLiteral("操作系统"),
+            QStringLiteral("无法读取系统版本"));
+    }
+
+    // 运行时长
+    {
+        const QString state = uptime > 30 * 86400 ? QStringLiteral("risk")
+                            : uptime > 7 * 86400  ? QStringLiteral("warn")
+                                                  : QStringLiteral("ok");
+        QString detail = QStringLiteral("已连续运行 ") + formatUptime(uptime);
+        if (state != QLatin1String("ok"))
+            detail += QStringLiteral("，建议重启");
+        add(state, QStringLiteral("运行时长"), detail);
+    }
+
+    // 内存
+    if (memTotal > 0) {
+        const int usedPercent = static_cast<int>((memTotal - memFree) * 100 / memTotal);
+        const QString state = usedPercent >= 95 ? QStringLiteral("risk")
+                            : usedPercent >= 85 ? QStringLiteral("warn")
+                                                : QStringLiteral("ok");
+        QString detail = QStringLiteral("已用 %1%（共 %2 GB，剩余 %3 GB）")
+                             .arg(usedPercent)
+                             .arg(formatGb(memTotal))
+                             .arg(formatGb(memFree));
+        if (state != QLatin1String("ok"))
+            detail += QStringLiteral("，建议关闭占用较高的程序");
+        add(state, QStringLiteral("内存占用"), detail);
+    } else {
+        add(QStringLiteral("warn"), QStringLiteral("内存占用"),
+            QStringLiteral("无法读取内存信息"));
+    }
+
+    // 系统盘
+    if (diskTotal > 0) {
+        const int usedPercent = static_cast<int>((diskTotal - diskFree) * 100 / diskTotal);
+        const QString state = usedPercent >= 95 ? QStringLiteral("risk")
+                            : usedPercent >= 85 ? QStringLiteral("warn")
+                                                : QStringLiteral("ok");
+        QString detail = QStringLiteral("系统盘 %1 已用 %2%（剩余 %3 GB / 共 %4 GB）")
+                             .arg(diskLetter.isEmpty() ? QStringLiteral("C:") : diskLetter)
+                             .arg(usedPercent)
+                             .arg(formatGb(diskFree))
+                             .arg(formatGb(diskTotal));
+        if (state != QLatin1String("ok"))
+            detail += QStringLiteral("，建议清理磁盘");
+        add(state, QStringLiteral("磁盘空间"), detail);
+    } else {
+        add(QStringLiteral("warn"), QStringLiteral("磁盘空间"),
+            QStringLiteral("无法读取系统盘信息"));
+    }
+
+    // 开机启动项
+    {
+        const QString state = startupCount >= 20 ? QStringLiteral("risk")
+                            : startupCount >= 10 ? QStringLiteral("warn")
+                                                 : QStringLiteral("ok");
+        QString detail = QStringLiteral("共 %1 项开机启动").arg(startupCount);
+        if (state != QLatin1String("ok"))
+            detail += QStringLiteral("，建议精简");
+        add(state, QStringLiteral("开机启动项"), detail);
+    }
+
+    // 待重启
+    add(pendingReboot ? QStringLiteral("warn") : QStringLiteral("ok"),
+        QStringLiteral("待重启操作"),
+        pendingReboot ? QStringLiteral("有更新或安装操作等待重启")
+                      : QStringLiteral("没有等待重启的操作"));
+
+    // 系统代理
+    add(proxyEnabled ? QStringLiteral("warn") : QStringLiteral("ok"),
+        QStringLiteral("系统代理"),
+        proxyEnabled ? QStringLiteral("系统代理已开启，可能影响网络诊断结论")
+                     : QStringLiteral("未开启系统代理"));
+
+    QString summary;
+    if (riskCount > 0) {
+        summary = QStringLiteral("体检完成：发现 %1 项注意、%2 项建议")
+                      .arg(riskCount)
+                      .arg(warnCount);
+    } else if (warnCount > 0) {
+        summary = QStringLiteral("体检完成：%1 项建议关注").arg(warnCount);
+    } else {
+        summary = QStringLiteral("体检完成：%1 项检查全部正常").arg(total);
+    }
+
+    const QString summaryState = riskCount > 0 ? QStringLiteral("risk")
+                               : warnCount > 0 ? QStringLiteral("warn")
+                                               : QStringLiteral("ok");
+    ui->healthSummary->setText(summary);
+    ui->healthSummary->setProperty("state", summaryState);
+    ui->healthSummary->style()->unpolish(ui->healthSummary);
+    ui->healthSummary->style()->polish(ui->healthSummary);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addHealthRow(const QString &state, const QString &name,
+                              const QString &detail)
+{
+    QWidget *row = new QWidget(ui->healthRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    const QString badgeText = state == QLatin1String("risk")
+                                  ? QStringLiteral("注意")
+                              : state == QLatin1String("warn")
+                                  ? QStringLiteral("建议")
+                                  : QStringLiteral("通过");
+
+    QLabel *badge = new QLabel(badgeText, row);
+    badge->setObjectName(QStringLiteral("healthBadge"));
+    badge->setProperty("state", state);
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(46);
+
+    QLabel *title = new QLabel(name, row);
+    title->setObjectName(QStringLiteral("healthName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("healthDetail"));
+    desc->setWordWrap(true);
+    desc->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    layout->addWidget(badge);
+    layout->addWidget(title);
+    layout->addWidget(desc, 1);
+
+    ui->healthRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具

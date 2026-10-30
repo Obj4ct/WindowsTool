@@ -40,7 +40,8 @@ private:
         NetInfo,         ///< ipconfig
         Cleaner,         ///< 清理系统临时文件
         WinsockReset,    ///< 重置 Winsock
-        FixWhite         ///< 重建桌面图标缓存
+        FixWhite,        ///< 重建桌面图标缓存
+        HealthCheck      ///< 系统体检（healthcheck.ps1）
     };
 
     void setupTheme();
@@ -60,6 +61,12 @@ private:
     void handleDnsCheck();
     void runFixDns(bool askAfter);
     void askNetworkRecovered();
+
+    // 系统体检
+    void runHealthCheck();
+    void handleHealthCheck();
+    void addHealthRow(const QString &state, const QString &name,
+                      const QString &detail);
 
     // 工具方法
     void appendLog(const QString &text);

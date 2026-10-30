@@ -57,12 +57,16 @@ if(MSVC)
     set_property(TARGET WindowsTool PROPERTY VS_GLOBAL_VcpkgApplocalDeps false)
 endif()
 
-# bat 脚本必须在 exe 同级目录：程序按 applicationDirPath()/bat/xxx.bat 查找
+# bat / ps1 脚本必须在 exe 同级目录：
+# 程序按 applicationDirPath()/bat/xxx.bat 和 ps1/xxx.ps1 查找
 add_custom_command(TARGET WindowsTool POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/bat"
         "$<TARGET_FILE_DIR:WindowsTool>/bat"
-    COMMENT "Copying bat/ next to the executable")
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/ps1"
+        "$<TARGET_FILE_DIR:WindowsTool>/ps1"
+    COMMENT "Copying bat/ and ps1/ next to the executable")
 
 # ---------------------------------------------------------------- 单元测试
 # 仅在显式请求时构建：cmake --build build --target NetCheckTest

@@ -182,6 +182,23 @@ void drawIcon(QPainter &p, Icon icon, const QColor &color)
         p.drawEllipse(QRectF(7.0, 7.0, 3.0, 3.0));
         break;
     }
+    case Icon::Health: {
+        // 心形轮廓
+        QPainterPath heart;
+        heart.moveTo(12.0, 20.2);
+        heart.cubicTo(9.4, 17.4, 3.2, 13.8, 3.2, 9.0);
+        heart.cubicTo(3.2, 5.8, 6.0, 3.8, 8.6, 3.8);
+        heart.cubicTo(10.4, 3.8, 11.6, 4.9, 12.0, 6.0);
+        heart.cubicTo(12.4, 4.9, 13.6, 3.8, 15.4, 3.8);
+        heart.cubicTo(18.0, 3.8, 20.8, 5.8, 20.8, 9.0);
+        heart.cubicTo(20.8, 13.8, 14.6, 17.4, 12.0, 20.2);
+        p.drawPath(heart);
+        // 脉搏
+        p.drawPath(polyline({QPointF(6.4, 10.6), QPointF(9.2, 10.6),
+                              QPointF(10.6, 8.2), QPointF(12.3, 13.2),
+                              QPointF(13.8, 10.6), QPointF(17.6, 10.6)}));
+        break;
+    }
     case Icon::Camera: {
         p.drawLine(QPointF(6.0, 2.6), QPointF(6.0, 6.6));
         p.drawLine(QPointF(6.0, 2.6), QPointF(10.0, 2.6));

@@ -30,6 +30,7 @@ enum class Icon {
     Reset,       ///< 重置（反向环形箭头）
     Clean,       ///< 清理（星芒）
     Picture,     ///< 桌面图标（图片）
+    Health,      ///< 电脑体检（心形 + 脉搏）
     Camera,      ///< 截图（裁切框）
     Keyboard,    ///< 快捷键
     Dots,        ///< 更多（三点）
