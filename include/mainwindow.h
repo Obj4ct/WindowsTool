@@ -51,7 +51,9 @@ private:
         ProcessList,     ///< 进程列表（processes.ps1）
         DiskUsage,       ///< 目录占用分析（diskusage.ps1）
         UninstallList,   ///< 已安装程序清单（uninstall.ps1）
-        DriverList       ///< 驱动清单（drivers.ps1）
+        DriverList,      ///< 驱动清单（drivers.ps1）
+        HostsRead,       ///< 读取 Hosts（hosts.ps1 -Action read）
+        HostsWrite       ///< 写入/恢复 Hosts（hosts.ps1 -Action save/restore）
     };
 
     void setupTheme();
@@ -141,8 +143,19 @@ private:
     void handleDriverList();
     void addDriverRow(const QString &name, const QString &detail);
 
+    // Hosts 查看与编辑
+    void runHostsRead();
+    void handleHostsRead();
+    void saveHosts();
+    void restoreHosts();
+    void runHostsWrite(const QString &action, const QString &source);
+    void handleHostsWrite();
+
     /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
     void showSystemResultCard(QWidget *card);
+
+    /** 恢复备份后用于提示文案 */
+    bool m_hostsRestore = false;
 
     // 工具方法
     void appendLog(const QString &text);

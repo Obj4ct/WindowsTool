@@ -21,6 +21,7 @@
 #include <QLabel>
 #include <QLayoutItem>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPixmap>
 #include <QPushButton>
 #include <QStyle>
@@ -206,7 +207,8 @@ MainWindow::MainWindow(QWidget *parent)
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
                     || m_task == Task::DiskHealth || m_task == Task::HwInfo
                     || m_task == Task::ProcessList || m_task == Task::DiskUsage
-                    || m_task == Task::UninstallList || m_task == Task::DriverList)
+                    || m_task == Task::UninstallList || m_task == Task::DriverList
+                    || m_task == Task::HostsRead || m_task == Task::HostsWrite)
                     return;
                 appendLog(text);
             });
@@ -291,7 +293,7 @@ void MainWindow::setupTheme()
     ui->btn_showNetWork->setIcon(tileIcon(UiIcons::Icon::Info));
     ui->btn_netWorkTest->setIcon(tileIcon(UiIcons::Icon::Activity));
     ui->btn_ports->setIcon(tileIcon(UiIcons::Icon::Link));
-    ui->btn_hosts->setIcon(grayIcon(UiIcons::Icon::Link));
+    ui->btn_hosts->setIcon(tileIcon(UiIcons::Icon::Link));
     ui->btn_dns->setIcon(grayIcon(UiIcons::Icon::Network));
 
     // 系统维护
@@ -529,10 +531,6 @@ void MainWindow::setupPlaceholders()
                         "将计算文件的 MD5 / SHA1 / SHA256，"
                         "用于校验下载文件是否完整、是否被篡改。");
 
-    wirePlaceholderTile(ui->btn_hosts,
-                        "Hosts 文件编辑",
-                        "将提供图形化的 hosts 编辑与备份还原，"
-                        "无需手改 hosts 也能管理域名映射。");
     wirePlaceholderTile(ui->btn_dns,
                         "DNS 切换",
                         "将内置常用 DNS 服务器，一键切换并立即测试解析速度。");
@@ -603,6 +601,14 @@ void MainWindow::setupNetwork()
     // 端口占用查询（只读）
     connect(ui->btn_ports, &QAbstractButton::clicked,
             this, &MainWindow::runPortsList);
+
+    // Hosts 查看与编辑
+    connect(ui->btn_hosts, &QAbstractButton::clicked,
+            this, &MainWindow::runHostsRead);
+    connect(ui->hostsSaveBtn, &QAbstractButton::clicked,
+            this, &MainWindow::saveHosts);
+    connect(ui->hostsRestoreBtn, &QAbstractButton::clicked,
+            this, &MainWindow::restoreHosts);
 }
 
 /**
@@ -671,6 +677,12 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::DriverList:
         handleDriverList();
+        break;
+    case Task::HostsRead:
+        handleHostsRead();
+        break;
+    case Task::HostsWrite:
+        handleHostsWrite();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -2739,6 +2751,262 @@ void MainWindow::addDriverRow(const QString &name, const QString &detail)
     layout->addWidget(desc);
 
     ui->driversRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- Hosts 编辑
+
+void MainWindow::runHostsRead()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/hosts.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少 Hosts 脚本",
+                    "未找到 ps1\\hosts.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    appendLog("正在读取 Hosts 文件……");
+
+    ui->hostsSummary->setText(QStringLiteral("正在读取……"));
+    ui->hostsSaveBtn->setEnabled(false);
+    ui->hostsRestoreBtn->setEnabled(false);
+    ui->cardHosts->setVisible(true);
+
+    QScrollArea *page = ui->pageNetwork;
+    QTimer::singleShot(0, this, [page, this] {
+        page->ensureWidgetVisible(ui->cardHosts);
+    });
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), QStringLiteral("read")
+    };
+
+    m_task = Task::HostsRead;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleHostsRead()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("HOSTS_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("读取 Hosts 失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->hostsSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取 Hosts 失败",
+                    "未能从 PowerShell 获取 Hosts 内容。\n\n"
+                    "请确认当前账户可以读取 "
+                    "C:\\Windows\\System32\\drivers\\etc\\hosts，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    const QString path = data.value(QStringLiteral("path")).toString();
+    const QString content = data.value(QStringLiteral("content")).toString();
+    const int backups = data.value(QStringLiteral("backups")).toInt();
+    const QString backupName = data.value(QStringLiteral("backup")).toString();
+    const QString backupTime = data.value(QStringLiteral("backupTime")).toString();
+
+    ui->hostsEditor->setPlainText(content);
+    QTextCursor cursor = ui->hostsEditor->textCursor();
+    cursor.movePosition(QTextCursor::Start);
+    ui->hostsEditor->setTextCursor(cursor);
+
+    QString summary = QStringLiteral("%1 · 共 %2 行 · 备份 %3 份")
+                          .arg(QDir::toNativeSeparators(path))
+                          .arg(content.isEmpty() ? 0
+                                                 : content.count(QLatin1Char('\n')) + 1)
+                          .arg(backups);
+    if (backups > 0 && !backupName.isEmpty())
+        summary += QStringLiteral("（最近 %1 · %2）").arg(backupName, backupTime);
+    else
+        summary += QStringLiteral("（保存时会自动创建备份）");
+
+    ui->hostsSummary->setText(summary);
+    ui->hostsSaveBtn->setEnabled(true);
+    ui->hostsRestoreBtn->setEnabled(backups > 0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::saveHosts()
+{
+    QString detail = QStringLiteral(
+        "将把编辑框中的内容写入系统 Hosts 文件。\n\n"
+        "写入前会自动备份原文件，写入需要管理员权限。");
+    if (ui->hostsEditor->toPlainText().trimmed().isEmpty())
+        detail = QStringLiteral(
+            "编辑框当前为空，保存后会清空 Hosts 里的全部规则。\n\n"
+            "写入前会自动备份原文件，写入需要管理员权限。");
+
+    if (QMessageBox::question(this, QStringLiteral("保存 Hosts"), detail)
+        != QMessageBox::Yes)
+        return;
+
+    // 内容先落到临时文件，提权脚本只按路径读取，避免命令行转义问题
+    const QString tempPath = QDir(QDir::tempPath())
+                                 .filePath(QStringLiteral("wt-hosts-edit.txt"));
+    QFile file(tempPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        showMessage("无法写入临时文件",
+                    file.errorString(), QMessageBox::Critical);
+        return;
+    }
+    file.write(ui->hostsEditor->toPlainText().toUtf8());
+    file.close();
+
+    runHostsWrite(QStringLiteral("save"), tempPath);
+}
+
+void MainWindow::restoreHosts()
+{
+    if (QMessageBox::question(this, QStringLiteral("恢复 Hosts 备份"),
+                              QStringLiteral(
+                                  "将用最近一次备份覆盖当前 Hosts。\n\n"
+                                  "当前内容不会再次备份，恢复需要管理员权限。"))
+        != QMessageBox::Yes)
+        return;
+
+    runHostsWrite(QStringLiteral("restore"), QString());
+}
+
+void MainWindow::runHostsWrite(const QString &action, const QString &source)
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/hosts.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少 Hosts 脚本",
+                    "未找到 ps1\\hosts.ps1，无法写入。", QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    m_hostsRestore = (action == QLatin1String("restore"));
+    appendLog(m_hostsRestore
+                  ? QStringLiteral("正在恢复 Hosts 备份，若弹出权限提示请选择“是”……")
+                  : QStringLiteral("正在写入 Hosts，若弹出权限提示请选择“是”……"));
+
+    ui->hostsSummary->setText(QStringLiteral("正在写入……"));
+    ui->hostsSaveBtn->setEnabled(false);
+    ui->hostsRestoreBtn->setEnabled(false);
+
+    QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), action
+    };
+    if (!source.isEmpty()) {
+        args << QStringLiteral("-Source") << source;
+    }
+
+    m_task = Task::HostsWrite;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleHostsWrite()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("HOSTS_WRITE_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+
+    const bool restore = m_hostsRestore;
+    m_hostsRestore = false;
+
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("写入 Hosts 失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        showMessage("写入 Hosts 失败",
+                    "提权进程没有返回有效结果，请重新读取 Hosts 确认当前内容。",
+                    QMessageBox::Warning);
+        runHostsRead();
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    const QString code = data.value(QStringLiteral("code")).toString();
+    const QString backup = data.value(QStringLiteral("backup")).toString();
+    const QString detail = data.value(QStringLiteral("detail")).toString();
+
+    // 脚本只输出英文代号，提示文案统一在这里组装
+    const bool ok = code == QLatin1String("saved") || code == QLatin1String("restored");
+    QString message;
+    if (code == QLatin1String("saved")) {
+        message = QStringLiteral("Hosts 已保存，修改前已备份。");
+        if (!backup.isEmpty())
+            message += QStringLiteral("\n备份文件：%1").arg(backup);
+    } else if (code == QLatin1String("restored")) {
+        message = QStringLiteral("已恢复备份 %1。").arg(backup);
+    } else if (code == QLatin1String("canceled")) {
+        message = QStringLiteral("已取消提权，Hosts 未修改。");
+    } else if (code == QLatin1String("source-missing")) {
+        message = QStringLiteral("待写入的临时内容已丢失，请重新保存。");
+    } else if (code == QLatin1String("no-backup")) {
+        message = QStringLiteral("没有可恢复的备份。");
+    } else if (code == QLatin1String("no-result")) {
+        message = QStringLiteral("提权进程没有返回结果，Hosts 可能未修改。");
+    } else {
+        message = detail.isEmpty() ? QStringLiteral("写入失败。")
+                                   : QStringLiteral("操作失败：%1").arg(detail);
+    }
+
+    appendLog("-------------------");
+    appendLog(message);
+
+    if (ok) {
+        showMessage(restore ? QStringLiteral("已恢复备份")
+                            : QStringLiteral("Hosts 已保存"),
+                    message);
+        runHostsRead();
+    } else {
+        showMessage(restore ? QStringLiteral("恢复 Hosts 失败")
+                            : QStringLiteral("保存 Hosts 失败"),
+                    message, QMessageBox::Warning);
+        ui->hostsSaveBtn->setEnabled(true);
+        ui->hostsRestoreBtn->setEnabled(true);
+        ui->hostsSummary->setText(QStringLiteral("未写入（%1）").arg(message));
+    }
 }
 
 // ---------------------------------------------------------------- 通用工具
