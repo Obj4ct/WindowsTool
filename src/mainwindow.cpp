@@ -219,7 +219,8 @@ MainWindow::MainWindow(QWidget *parent)
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
                     || m_task == Task::DiskHealth || m_task == Task::HwInfo
                     || m_task == Task::ProcessList || m_task == Task::DiskUsage
-                    || m_task == Task::UninstallList || m_task == Task::DriverList
+                    || m_task == Task::UninstallList || m_task == Task::UninstallAction
+                    || m_task == Task::DriverList
                     || m_task == Task::HostsRead || m_task == Task::HostsWrite
                     || m_task == Task::DnsRead || m_task == Task::DnsWrite)
                     return;
@@ -703,6 +704,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::UninstallList:
         handleUninstallList();
+        break;
+    case Task::UninstallAction:
+        handleUninstallAction();
         break;
     case Task::DriverList:
         handleDriverList();
@@ -2604,6 +2608,8 @@ void MainWindow::handleUninstallList()
 
         const qint64 size = static_cast<qint64>(
             object.value(QStringLiteral("size")).toDouble());
+        const QString key = object.value(QStringLiteral("key")).toString();
+        const bool uninstallable = object.value(QStringLiteral("uninstall")).toBool();
 
         QStringList parts;
         const QString version = object.value(QStringLiteral("version")).toString();
@@ -2619,7 +2625,7 @@ void MainWindow::handleUninstallList()
             parts << QStringLiteral("缺少版本与发布者信息");
 
         addAppRow(size > 0 ? formatFileSize(size) : QStringLiteral("—"),
-                  name, parts.join(QStringLiteral(" · ")));
+                  name, parts.join(QStringLiteral(" · ")), key, uninstallable);
         ++shown;
     }
 
@@ -2627,10 +2633,12 @@ void MainWindow::handleUninstallList()
     if (shown == 0) {
         summary = QStringLiteral("未读取到已安装程序");
     } else if (total > shown) {
-        summary = QStringLiteral("共 %1 个已安装程序 · 列出占用最大的 %2 个（只读清单）")
+        summary = QStringLiteral("共 %1 个已安装程序 · 列出占用最大的 %2 个 · "
+                                 "可点击右侧「卸载」启动卸载程序")
                       .arg(total).arg(shown);
     } else {
-        summary = QStringLiteral("共 %1 个已安装程序 · 按占用空间排序（只读清单）")
+        summary = QStringLiteral("共 %1 个已安装程序 · 按占用空间排序 · "
+                                 "可点击右侧「卸载」启动卸载程序")
                       .arg(shown);
     }
 
@@ -2642,7 +2650,8 @@ void MainWindow::handleUninstallList()
 }
 
 void MainWindow::addAppRow(const QString &size, const QString &name,
-                           const QString &detail)
+                           const QString &detail, const QString &key,
+                           bool uninstallable)
 {
     QWidget *row = new QWidget(ui->uninstallRows);
     QHBoxLayout *layout = new QHBoxLayout(row);
@@ -2669,10 +2678,141 @@ void MainWindow::addAppRow(const QString &size, const QString &name,
     text->addWidget(title);
     text->addWidget(desc);
 
-    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addWidget(badge, 0, Qt::AlignVCenter);
     layout->addLayout(text, 1);
 
+    // 只有注册表项里带 UninstallString 的程序才能从清单里直接卸载
+    if (uninstallable && !key.isEmpty()) {
+        QPushButton *uninstallButton = new QPushButton(QStringLiteral("卸载"), row);
+        uninstallButton->setObjectName(QStringLiteral("appUninstallBtn"));
+        uninstallButton->setMinimumSize(60, 28);
+        uninstallButton->setCursor(Qt::PointingHandCursor);
+        connect(uninstallButton, &QAbstractButton::clicked, this,
+                [this, key, name] { runUninstall(key, name); });
+        layout->addWidget(uninstallButton, 0, Qt::AlignVCenter);
+    }
+
     ui->uninstallRowsLayout->addWidget(row);
+}
+
+void MainWindow::runUninstall(const QString &key, const QString &name)
+{
+    if (!confirmAction(QStringLiteral("确认卸载"),
+                       QStringLiteral("将启动「%1」自带的卸载程序。\n\n"
+                                      "卸载由系统或软件厂商的向导完成，过程中可能需要管理员权限；"
+                                      "若弹出权限提示请选择“是”。")
+                           .arg(name),
+                       QMessageBox::Question))
+        return;
+
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/uninstall.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少卸载脚本",
+                    "未找到 ps1\\uninstall.ps1，无法卸载。", QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    appendLog("-------------------");
+    appendLog(QStringLiteral("正在启动「%1」的卸载程序，若弹出权限提示请选择“是”……")
+                  .arg(name));
+    ui->uninstallSummary->setText(QStringLiteral("正在卸载「%1」……").arg(name));
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), QStringLiteral("uninstall"),
+        QStringLiteral("-Key"), key
+    };
+
+    m_task = Task::UninstallAction;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleUninstallAction()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("UNINSTALL_ACTION_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+
+    QString code;
+    QString name;
+    QString detail;
+    if (!payload.isEmpty() && parseError.error == QJsonParseError::NoError
+        && document.isObject()) {
+        const QJsonObject data = document.object();
+        code = data.value(QStringLiteral("code")).toString();
+        name = data.value(QStringLiteral("name")).toString();
+        detail = data.value(QStringLiteral("detail")).toString();
+    }
+
+    if (code == QLatin1String("removed")) {
+        appendLog(QStringLiteral("「%1」的卸载程序已结束，程序项已从清单移除。").arg(name));
+        showMessage("卸载完成", QStringLiteral("「%1」已卸载，正在刷新程序清单。").arg(name));
+        runUninstallList();
+        return;
+    }
+
+    if (code == QLatin1String("still-present")) {
+        appendLog(QStringLiteral("「%1」的卸载程序已结束，但程序项仍然存在。").arg(name));
+        showMessage("卸载未完成",
+                    QStringLiteral("卸载程序已结束，但「%1」仍在程序清单中，"
+                                   "可能已取消或未彻底卸载。\n\n正在刷新清单。")
+                        .arg(name),
+                    QMessageBox::Warning);
+        runUninstallList();
+        return;
+    }
+
+    if (code == QLatin1String("pending")) {
+        appendLog(QStringLiteral("「%1」的卸载程序仍在运行。").arg(name));
+        ui->uninstallSummary->setText(QStringLiteral("卸载程序仍在运行，完成后重新点击"
+                                                     "「已安装程序」磁贴即可刷新清单"));
+        showMessage("卸载进行中",
+                    QStringLiteral("「%1」的卸载程序仍在运行。\n\n"
+                                   "请在卸载窗口中完成操作，之后重新点击"
+                                   "「已安装程序」磁贴刷新清单。")
+                        .arg(name));
+        return;
+    }
+
+    // 其余情况：提示原因，并刷新清单让用户看到最新状态
+    QString message;
+    if (code == QLatin1String("canceled")) {
+        message = QStringLiteral("已取消提权，卸载未执行。");
+    } else if (code == QLatin1String("no-entry")) {
+        message = QStringLiteral("该程序项已不存在，可能已被卸载。");
+    } else if (code == QLatin1String("no-command")) {
+        message = QStringLiteral("该系统项没有提供卸载命令，请到「设置 → 应用」中卸载。");
+    } else if (code == QLatin1String("no-result")) {
+        message = QStringLiteral("提权进程没有返回结果，卸载可能未执行。");
+    } else if (code == QLatin1String("error")) {
+        message = QStringLiteral("卸载时出错：%1").arg(detail);
+    } else {
+        message = QStringLiteral("未能解析卸载结果，请刷新清单确认当前状态。");
+    }
+
+    appendLog("-------------------");
+    appendLog(message);
+    showMessage(code == QLatin1String("canceled")
+                    ? QStringLiteral("已取消卸载")
+                    : QStringLiteral("未能完成卸载"),
+                message, QMessageBox::Warning);
+    runUninstallList();
 }
 
 // ---------------------------------------------------------------- 驱动清单

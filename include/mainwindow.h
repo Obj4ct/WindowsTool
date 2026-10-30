@@ -52,6 +52,7 @@ private:
         ProcessList,     ///< 进程列表（processes.ps1）
         DiskUsage,       ///< 目录占用分析（diskusage.ps1）
         UninstallList,   ///< 已安装程序清单（uninstall.ps1）
+        UninstallAction, ///< 执行卸载（uninstall.ps1 -Action uninstall）
         DriverList,      ///< 驱动清单（drivers.ps1）
         HostsRead,       ///< 读取 Hosts（hosts.ps1 -Action read）
         HostsWrite,      ///< 写入/恢复 Hosts（hosts.ps1 -Action save/restore）
@@ -135,11 +136,14 @@ private:
     void addUsageRow(const QString &percent, const QString &name,
                      const QString &detail);
 
-    // 已安装程序清单（只读）
+    // 已安装程序清单 / 卸载
     void runUninstallList();
     void handleUninstallList();
+    void runUninstall(const QString &key, const QString &name);
+    void handleUninstallAction();
     void addAppRow(const QString &size, const QString &name,
-                   const QString &detail);
+                   const QString &detail, const QString &key,
+                   bool uninstallable);
 
     // 驱动清单（只读）
     void runDriverList();

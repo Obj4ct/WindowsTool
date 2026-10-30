@@ -515,6 +515,23 @@ QToolButton[placeholder="true"]:pressed {
     font-size: 12px;
 }
 
+#appUninstallBtn {
+    background: #F2F6FE;
+    border: 1px solid #D7E4FA;
+    border-radius: 6px;
+    color: #2B6CD4;
+    font-size: 12px;
+    padding: 0 12px;
+}
+
+#appUninstallBtn:hover {
+    background: #E8F0FE;
+}
+
+#appUninstallBtn:pressed {
+    background: #D9E7FD;
+}
+
 /* ---------------- 驱动清单 ---------------- */
 #driversSummary {
     color: #4A576F;
