@@ -94,8 +94,12 @@ TILES = {
 
 # 侧边导航项的纵向坐标（同样基于 996x759 量取）
 NAV_Y = {
-    "网络": 168,
-    "系统": 213,
+    "概览": 168,
+    "网络": 213,
+    "系统维护": 258,
+    "硬件监控": 303,
+    "系统管理": 348,
+    "实用工具": 393,
 }
 
 passed = 0
@@ -237,7 +241,7 @@ def click_tile(hwnd, key):
 
 
 def click_nav(hwnd, label):
-    """点击侧边导航项（label: "网络" / "系统"）"""
+    """点击侧边导航项（label 见 NAV_Y）"""
     move_window_to_origin(hwnd)
     ox, oy = window_origin(hwnd)
     rect = wt.RECT()
@@ -269,6 +273,7 @@ def test_log_output(exe, shot_dir):
         check("启动并显示主窗口", True)
         time.sleep(2)
 
+        click_nav(hwnd, "网络")      # 磁贴都在网络页，先切页
         click_tile(hwnd, "test")   # 网络测试 → ping
         time.sleep(7)
 
@@ -304,6 +309,7 @@ def test_close_while_running(exe):
                 check(f"启动（等待 {wait}s）", False, "未找到窗口")
                 continue
             time.sleep(2)
+            click_nav(hwnd, "网络")
             click_tile(hwnd, "test")   # 启动 ping，让子进程跑起来
             time.sleep(wait)
 
@@ -343,6 +349,7 @@ def test_task_switch(exe):
             return
         time.sleep(2)
 
+        click_nav(hwnd, "网络")
         for key in ("test", "info", "test", "auto"):
             click_tile(hwnd, key)
             time.sleep(0.4)

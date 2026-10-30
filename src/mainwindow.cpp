@@ -26,6 +26,7 @@
 #include <QStyle>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QTimer>
 #include <QToolButton>
@@ -156,6 +157,8 @@ MainWindow::MainWindow(QWidget *parent)
     setupTheme();
     setupAbout();
     setupNavigation();
+    setupOverview();
+    setupPlaceholders();
     setupNetwork();
     setupSystem();
 
@@ -214,9 +217,14 @@ void MainWindow::setupTheme()
                       QIcon::Active, QIcon::Off);
         return ico;
     };
+    ui->navOverviewBtn->setIcon(navIcon(UiIcons::Icon::Health));
     ui->navNetworkBtn->setIcon(navIcon(UiIcons::Icon::Network));
     ui->navSystemBtn->setIcon(navIcon(UiIcons::Icon::Monitor));
-    for (QPushButton *b : {ui->navNetworkBtn, ui->navSystemBtn}) {
+    ui->navHardwareBtn->setIcon(navIcon(UiIcons::Icon::DiskPulse));
+    ui->navManageBtn->setIcon(navIcon(UiIcons::Icon::Rocket));
+    ui->navToolsBtn->setIcon(navIcon(UiIcons::Icon::Grid));
+    for (QPushButton *b : {ui->navOverviewBtn, ui->navNetworkBtn, ui->navSystemBtn,
+                           ui->navHardwareBtn, ui->navManageBtn, ui->navToolsBtn}) {
         b->setIconSize(QSize(18, 18));
     }
 
@@ -228,23 +236,66 @@ void MainWindow::setupTheme()
         ico.addPixmap(UiIcons::render(icon, cAccentDark, 30), QIcon::Active, QIcon::Off);
         return ico;
     };
+    // 规划中功能的磁贴用灰色图标，与可用功能区分
+    auto grayIcon = [](UiIcons::Icon icon) {
+        return UiIcons::make(icon, QColor("#AEB8C8"), 30);
+    };
+
+    // 概览页快捷入口
+    ui->btn_quickHealth->setIcon(tileIcon(UiIcons::Icon::Health));
+    ui->btn_quickNetwork->setIcon(tileIcon(UiIcons::Icon::Network));
+    ui->btn_quickPorts->setIcon(tileIcon(UiIcons::Icon::Link));
+    ui->btn_quickDisk->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
+
+    // 网络
     ui->btn_autoCheck->setIcon(tileIcon(UiIcons::Icon::ShieldCheck));
     ui->btn_showNetWork->setIcon(tileIcon(UiIcons::Icon::Info));
     ui->btn_netWorkTest->setIcon(tileIcon(UiIcons::Icon::Activity));
     ui->btn_ports->setIcon(tileIcon(UiIcons::Icon::Link));
+    ui->btn_hosts->setIcon(grayIcon(UiIcons::Icon::Link));
+    ui->btn_dns->setIcon(grayIcon(UiIcons::Icon::Network));
+
+    // 系统维护
     ui->btn_cleaner->setIcon(tileIcon(UiIcons::Icon::Clean));
     ui->btn_fixWhite->setIcon(tileIcon(UiIcons::Icon::Picture));
     ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
-    ui->btn_startup->setIcon(tileIcon(UiIcons::Icon::Rocket));
-    ui->btn_largeFiles->setIcon(tileIcon(UiIcons::Icon::Disk));
+    ui->btn_sfc->setIcon(grayIcon(UiIcons::Icon::ShieldCheck));
+    ui->btn_wupdate->setIcon(grayIcon(UiIcons::Icon::Refresh));
+    ui->btn_bsod->setIcon(grayIcon(UiIcons::Icon::Info));
+
+    // 硬件监控
     ui->btn_diskHealth->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
+    ui->btn_hwinfo->setIcon(grayIcon(UiIcons::Icon::Monitor));
+    ui->btn_battery->setIcon(grayIcon(UiIcons::Icon::Activity));
+    ui->btn_monitor->setIcon(grayIcon(UiIcons::Icon::Activity));
+
+    // 系统管理
+    ui->btn_startup->setIcon(tileIcon(UiIcons::Icon::Rocket));
+    ui->btn_process->setIcon(grayIcon(UiIcons::Icon::Dots));
+    ui->btn_uninstall->setIcon(grayIcon(UiIcons::Icon::Grid));
+    ui->btn_drivers->setIcon(grayIcon(UiIcons::Icon::Keyboard));
+
+    // 实用工具
+    ui->btn_largeFiles->setIcon(tileIcon(UiIcons::Icon::Disk));
+    ui->btn_treedisk->setIcon(grayIcon(UiIcons::Icon::Picture));
+    ui->btn_dup->setIcon(grayIcon(UiIcons::Icon::Grid));
+    ui->btn_hash->setIcon(grayIcon(UiIcons::Icon::Link));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
-    for (QToolButton *b : {ui->btn_autoCheck, ui->btn_showNetWork,
+    for (QToolButton *b : {ui->btn_quickHealth, ui->btn_quickNetwork,
+                            ui->btn_quickPorts, ui->btn_quickDisk,
+                            ui->btn_autoCheck, ui->btn_showNetWork,
                             ui->btn_netWorkTest, ui->btn_ports,
+                            ui->btn_hosts, ui->btn_dns,
                             ui->btn_cleaner, ui->btn_fixWhite,
-                            ui->btn_healthCheck, ui->btn_startup,
-                            ui->btn_largeFiles, ui->btn_diskHealth}) {
+                            ui->btn_healthCheck, ui->btn_sfc,
+                            ui->btn_wupdate, ui->btn_bsod,
+                            ui->btn_diskHealth, ui->btn_hwinfo,
+                            ui->btn_battery, ui->btn_monitor,
+                            ui->btn_startup, ui->btn_process,
+                            ui->btn_uninstall, ui->btn_drivers,
+                            ui->btn_largeFiles, ui->btn_treedisk,
+                            ui->btn_dup, ui->btn_hash}) {
         b->setIconSize(QSize(30, 30));
     }
 
@@ -331,16 +382,142 @@ void MainWindow::setupAbout()
 
 void MainWindow::setupNavigation()
 {
-    auto switchTo = [this](int index) {
-        ui->stackedWidget->setCurrentIndex(index);
+    const struct {
+        QPushButton *button;
+        int page;
+    } entries[] = {
+        {ui->navOverviewBtn, 0},
+        {ui->navNetworkBtn, 1},
+        {ui->navSystemBtn, 2},
+        {ui->navHardwareBtn, 3},
+        {ui->navManageBtn, 4},
+        {ui->navToolsBtn, 5},
     };
 
-    connect(ui->navNetworkBtn, &QAbstractButton::clicked, this, [switchTo]() { switchTo(0); });
-    connect(ui->navSystemBtn, &QAbstractButton::clicked, this, [switchTo]() { switchTo(1); });
+    for (const auto &entry : entries) {
+        connect(entry.button, &QAbstractButton::clicked, this,
+                [this, page = entry.page]() { showPage(page); });
+    }
 
-    // 默认停在第一页
-    ui->navNetworkBtn->setChecked(true);
-    ui->stackedWidget->setCurrentIndex(0);
+    // 默认停在概览页
+    showPage(0);
+}
+
+void MainWindow::showPage(int index)
+{
+    ui->stackedWidget->setCurrentIndex(index);
+
+    QPushButton *buttons[] = {
+        ui->navOverviewBtn, ui->navNetworkBtn, ui->navSystemBtn,
+        ui->navHardwareBtn, ui->navManageBtn, ui->navToolsBtn,
+    };
+    const int count = int(sizeof(buttons) / sizeof(buttons[0]));
+    if (index >= 0 && index < count)
+        buttons[index]->setChecked(true);
+}
+
+// ---------------------------------------------------------------- 概览
+
+void MainWindow::setupOverview()
+{
+    // 一键体检：跳到系统维护页再执行，结果卡片就在该页
+    connect(ui->btn_quickHealth, &QAbstractButton::clicked, this, [this]() {
+        showPage(2);
+        runHealthCheck();
+    });
+
+    // 网络诊断：网络页集中了全部网络功能
+    connect(ui->btn_quickNetwork, &QAbstractButton::clicked, this, [this]() {
+        showPage(1);
+    });
+
+    // 端口占用：切到网络页后立即查询
+    connect(ui->btn_quickPorts, &QAbstractButton::clicked, this, [this]() {
+        showPage(1);
+        runPortsList();
+    });
+
+    // 磁盘健康：切到硬件监控页后立即检测
+    connect(ui->btn_quickDisk, &QAbstractButton::clicked, this, [this]() {
+        showPage(3);
+        runDiskHealth();
+    });
+}
+
+// ---------------------------------------------------------------- 规划中功能
+
+void MainWindow::wirePlaceholderTile(QToolButton *tile, const QString &title,
+                                     const QString &detail)
+{
+    tile->setProperty("placeholder", true);
+
+    connect(tile, &QAbstractButton::clicked, this, [this, title, detail]() {
+        showMessage("功能开发中",
+                    title + "\n\n" + detail
+                        + "\n\n该功能仍在规划中，上线后会在这里提供入口。");
+    });
+}
+
+void MainWindow::setupPlaceholders()
+{
+    wirePlaceholderTile(ui->btn_sfc,
+                        "系统文件修复（SFC / DISM）",
+                        "将调用系统自带的 SFC 与 DISM 修复受损的系统组件，"
+                        "用于解决系统文件缺失、开始菜单异常等问题。");
+    wirePlaceholderTile(ui->btn_wupdate,
+                        "Windows 更新修复",
+                        "将重置更新组件与缓存，用于解决更新失败、"
+                        "一直停在检查更新、错误代码 0x80070002 等情况。");
+    wirePlaceholderTile(ui->btn_bsod,
+                        "蓝屏分析",
+                        "将读取最近一次崩溃的转储文件，定位可能引发蓝屏的"
+                        "驱动或硬件，并给出处理建议。");
+
+    wirePlaceholderTile(ui->btn_hwinfo,
+                        "硬件信息",
+                        "将汇总 CPU、内存、显卡、主板与显示器的详细参数，"
+                        "方便确认配置或转手估值。");
+    wirePlaceholderTile(ui->btn_battery,
+                        "电池健康",
+                        "将读取电池的设计容量与当前容量，评估损耗程度，"
+                        "并展示最近的充电记录。");
+    wirePlaceholderTile(ui->btn_monitor,
+                        "实时监控",
+                        "将持续展示 CPU、内存、磁盘与网络的实时占用，"
+                        "用于定位卡顿发生的具体时刻。");
+
+    wirePlaceholderTile(ui->btn_process,
+                        "进程列表",
+                        "将展示运行中的进程及其 CPU、内存占用，"
+                        "支持按占用排序并结束异常进程。");
+    wirePlaceholderTile(ui->btn_uninstall,
+                        "软件卸载",
+                        "将列出已安装程序并调用系统卸载流程，"
+                        "同时显示占用空间与安装日期。");
+    wirePlaceholderTile(ui->btn_drivers,
+                        "驱动清单",
+                        "将列出已安装的驱动及其版本、日期与设备状态，"
+                        "便于排查设备异常。");
+
+    wirePlaceholderTile(ui->btn_treedisk,
+                        "目录占用",
+                        "将以树形视图展示各文件夹的占用空间，"
+                        "快速定位吃掉磁盘的大目录。");
+    wirePlaceholderTile(ui->btn_dup,
+                        "重复文件",
+                        "将按文件内容找出重复文件，确认后安全释放磁盘空间。");
+    wirePlaceholderTile(ui->btn_hash,
+                        "文件哈希",
+                        "将计算文件的 MD5 / SHA1 / SHA256，"
+                        "用于校验下载文件是否完整、是否被篡改。");
+
+    wirePlaceholderTile(ui->btn_hosts,
+                        "Hosts 文件编辑",
+                        "将提供图形化的 hosts 编辑与备份还原，"
+                        "无需手改 hosts 也能管理域名映射。");
+    wirePlaceholderTile(ui->btn_dns,
+                        "DNS 切换",
+                        "将内置常用 DNS 服务器，一键切换并立即测试解析速度。");
 }
 
 // ---------------------------------------------------------------- 网络模块
@@ -1255,9 +1432,17 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardLargeFiles->setVisible(card == ui->cardLargeFiles);
     ui->cardDiskHealth->setVisible(card == ui->cardDiskHealth);
 
-    // 系统页是可滚动的，结果显示后把对应卡片滚入视野
-    QTimer::singleShot(0, this, [this, card] {
-        ui->pageSystem->ensureWidgetVisible(card);
+    // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
+    QScrollArea *page = ui->pageSystem;
+    if (card == ui->cardStartup)
+        page = ui->pageManage;
+    else if (card == ui->cardLargeFiles)
+        page = ui->pageTools;
+    else if (card == ui->cardDiskHealth)
+        page = ui->pageHardware;
+
+    QTimer::singleShot(0, this, [page, card] {
+        page->ensureWidgetVisible(card);
     });
 }
 

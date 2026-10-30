@@ -10,6 +10,7 @@ namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
 class ProcessRunner;
+class QToolButton;
 
 /**
  * 主窗口：GUI 与流程编排。
@@ -51,8 +52,17 @@ private:
     void setupTheme();
     void setupAbout();
     void setupNavigation();
+    void setupOverview();
+    void setupPlaceholders();
     void setupNetwork();
     void setupSystem();
+
+    /** 切换功能页（0 概览 / 1 网络 / 2 系统维护 / 3 硬件监控 / 4 系统管理 / 5 实用工具） */
+    void showPage(int index);
+
+    /** 把规划中的磁贴置灰，点击只提示"功能开发中" */
+    void wirePlaceholderTile(QToolButton *tile, const QString &title,
+                             const QString &detail);
 
     // 异步任务分发
     void onTaskFinished(int exitCode);
