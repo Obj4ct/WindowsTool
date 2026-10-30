@@ -1,0 +1,80 @@
+# ---- 智能体工作区数据 ----
+.workbuddy/
+
+# ---- 构建输出 ----
+build/
+build-*/
+out/
+cmake-build-*/
+*.user
+
+# ---- Qt / CMake 生成物 ----
+CMakeLists.txt.user
+CMakeLists.txt.user.*
+*.pro.user
+*.qmake.stash
+.qmake.stash
+Makefile
+Makefile.*
+!Makefile.am
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+compile_commands.json
+_deps/
+
+# ---- 编译中间产物 ----
+*.o
+*.obj
+*.lo
+*.pdb
+*.ilk
+*.idb
+*.exp
+*.lib
+*.exp
+*.res
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.exe
+*.dll
+*.pdb
+
+# ---- VS / IDE ----
+.vs/
+.vscode/
+.idea/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.suo
+*.aps
+*.ncb
+*.sdf
+*.opensdf
+*.ipch
+*.tlog
+*.lastbuildstate
+*.log
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+
+# ---- 打包产物 ----
+*.7z
+*.zip
+*.tar.gz
+*.msi
+*.msix
+*.appx
+
+# ---- 系统垃圾 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+*.tmp
+*.log

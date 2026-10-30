@@ -8,5 +8,6 @@
         <file>ico/toolBox.png</file>
         <file>ico/question.png</file>
         <file>ico/attention.png</file>
+        <file>style.qss</file>
     </qresource>
 </RCC>

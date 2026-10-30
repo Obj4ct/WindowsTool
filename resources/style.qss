@@ -1,0 +1,268 @@
+/* ============================================================
+   WindowsTool 主题
+   三区结构：深色导航侧栏 + 浅色卡片内容区 + 深色控制台
+   ============================================================ */
+
+* {
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI";
+}
+
+/* ---------------- 根容器 ---------------- */
+#centralwidget {
+    background: #F4F6FA;
+}
+
+/* ---------------- 顶栏 ---------------- */
+#headerFrame {
+    background: #FFFFFF;
+    border-bottom: 1px solid #E6EAF1;
+}
+
+#appTitle {
+    color: #16202E;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+#appSubtitle {
+    color: #93A0B4;
+    font-size: 12px;
+}
+
+#aboutButton {
+    background: #F3F6FB;
+    border: 1px solid #E2E8F2;
+    border-radius: 8px;
+    color: #4A576F;
+    font-size: 13px;
+    padding: 7px 18px;
+}
+#aboutButton:hover {
+    background: #E9F0FC;
+    border-color: #CBD9F2;
+    color: #2B6CD4;
+}
+#aboutButton:pressed {
+    background: #DEE8FA;
+}
+
+/* ---------------- 侧边导航 ---------------- */
+#sidebarFrame {
+    background: #151D2E;
+    border-right: 1px solid #0D1422;
+}
+
+#sideSection {
+    color: #5C6A84;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 12px;
+}
+
+#sideVersion {
+    color: #47536B;
+    font-size: 11px;
+    padding: 0 12px;
+}
+
+#navNetworkBtn, #navSystemBtn, #navToolsBtn {
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0;
+    color: #93A0B8;
+    font-size: 14px;
+    padding: 11px 14px;
+    text-align: left;
+}
+#navNetworkBtn:hover, #navSystemBtn:hover, #navToolsBtn:hover {
+    background: #1D2739;
+    color: #DCE4F0;
+}
+#navNetworkBtn:checked, #navSystemBtn:checked, #navToolsBtn:checked {
+    background: #1F2B40;
+    border-left: 3px solid #4A8CFF;
+    color: #FFFFFF;
+}
+
+/* ---------------- 内容卡片 ---------------- */
+#cardNetwork, #cardAdvanced, #cardSystem, #cardShortcuts {
+    background: #FFFFFF;
+    border: 1px solid #E6EAF2;
+    border-radius: 14px;
+}
+
+#cardTitleNet, #cardTitleAdv, #cardTitleSys, #cardTitleTool {
+    color: #1B2637;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+#cardHintNet, #cardHintAdv, #cardHintSys, #cardHintTool {
+    color: #96A2B6;
+    font-size: 12px;
+}
+
+/* ---------------- 功能磁贴 ---------------- */
+#btn_autoCheck, #btn_showNetWork, #btn_netWorkTest,
+#btn_cleaner, #btn_fixWhite, #btn_prt {
+    background: #FFFFFF;
+    border: 1px solid #E3E8F1;
+    border-radius: 12px;
+    color: #1E2A3B;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 16px 8px;
+}
+#btn_autoCheck:hover, #btn_showNetWork:hover, #btn_netWorkTest:hover,
+#btn_cleaner:hover, #btn_fixWhite:hover, #btn_prt:hover {
+    background: #FAFCFF;
+    border-color: #AEC7F4;
+    color: #1A5FD0;
+}
+#btn_autoCheck:pressed, #btn_showNetWork:pressed, #btn_netWorkTest:pressed,
+#btn_cleaner:pressed, #btn_fixWhite:pressed, #btn_prt:pressed {
+    background: #EFF4FD;
+    border-color: #8FB4EE;
+}
+#btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_netWorkTest:disabled,
+#btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_prt:disabled {
+    background: #F7F8FA;
+    border-color: #EAEEF4;
+    color: #B6BFCC;
+}
+
+/* 次级按钮 */
+#btn_refreshDNS, #btn_resetWinSock, #btn_key {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 9px;
+    color: #4A576F;
+    font-size: 13px;
+    padding: 9px 16px;
+}
+#btn_refreshDNS:hover, #btn_resetWinSock:hover, #btn_key:hover {
+    background: #F5F8FE;
+    border-color: #B9CDF0;
+    color: #2B6CD4;
+}
+#btn_refreshDNS:pressed, #btn_resetWinSock:pressed, #btn_key:pressed {
+    background: #EAF1FC;
+}
+
+/* ---------------- 日志控制台 ---------------- */
+#logPanel {
+    background: #101725;
+    border: 1px solid #1D2637;
+    border-radius: 12px;
+}
+
+#logHeader {
+    background: #18202F;
+    border-top-left-radius: 11px;
+    border-top-right-radius: 11px;
+    border-bottom: 1px solid #222C3D;
+}
+
+#logTitle {
+    color: #8FA0B8;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#clearLogButton {
+    background: transparent;
+    border: 1px solid #2C374B;
+    border-radius: 6px;
+    color: #7C8CA4;
+    font-size: 11px;
+    padding: 3px 12px;
+}
+#clearLogButton:hover {
+    background: #222C3D;
+    border-color: #3A4860;
+    color: #C6D2E4;
+}
+
+QTextBrowser#textBrowser {
+    background: #101725;
+    border: none;
+    color: #C3D0E4;
+    font-family: "Consolas", "Cascadia Mono", "Microsoft YaHei UI";
+    font-size: 12px;
+    padding: 10px 12px;
+    selection-background-color: #2B4C86;
+    selection-color: #FFFFFF;
+}
+
+/* 快捷键页的内容视图 */
+QTextBrowser#shortcutView {
+    background: #FBFCFE;
+    border: 1px solid #EDF0F6;
+    border-radius: 10px;
+    color: #3A4658;
+    font-size: 13px;
+    padding: 6px 10px;
+    selection-background-color: #CFE0FB;
+    selection-color: #16202E;
+}
+
+/* ---------------- 滚动条 ---------------- */
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px 2px 2px 0;
+}
+QScrollBar::handle:vertical {
+    background: #C6CEDC;
+    border-radius: 5px;
+    min-height: 32px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #A8B3C4;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+    width: 0;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 0 2px 2px 2px;
+}
+QScrollBar::handle:horizontal {
+    background: #C6CEDC;
+    border-radius: 5px;
+    min-width: 32px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #A8B3C4;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    height: 0;
+    width: 0;
+}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: transparent;
+}
+
+/* 控制台内滚动条用深色 */
+#textBrowser QScrollBar::handle:vertical {
+    background: #33415A;
+}
+#textBrowser QScrollBar::handle:vertical:hover {
+    background: #465872;
+}
+
+/* ---------------- 提示气泡 ---------------- */
+QToolTip {
+    background: #1E2738;
+    border: 1px solid #33405A;
+    border-radius: 6px;
+    color: #DCE4F0;
+    padding: 5px 9px;
+}

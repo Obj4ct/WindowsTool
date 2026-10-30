@@ -1,7 +1,4 @@
 @echo off
+chcp 936 >nul 2>&1
 nslookup baidu.com
-
 echo Ö´ĞĞÍê³É
-
-taskkill /f /im cmd.exe
-
