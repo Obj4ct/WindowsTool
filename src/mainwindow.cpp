@@ -168,7 +168,7 @@ MainWindow::MainWindow(QWidget *parent)
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
                     || m_task == Task::DiskHealth || m_task == Task::HwInfo
-                    || m_task == Task::ProcessList)
+                    || m_task == Task::ProcessList || m_task == Task::DiskUsage)
                     return;
                 appendLog(text);
             });
@@ -278,7 +278,7 @@ void MainWindow::setupTheme()
 
     // 实用工具
     ui->btn_largeFiles->setIcon(tileIcon(UiIcons::Icon::Disk));
-    ui->btn_treedisk->setIcon(grayIcon(UiIcons::Icon::Picture));
+    ui->btn_treedisk->setIcon(tileIcon(UiIcons::Icon::Picture));
     ui->btn_dup->setIcon(grayIcon(UiIcons::Icon::Grid));
     ui->btn_hash->setIcon(grayIcon(UiIcons::Icon::Link));
 
@@ -492,10 +492,6 @@ void MainWindow::setupPlaceholders()
                         "将列出已安装的驱动及其版本、日期与设备状态，"
                         "便于排查设备异常。");
 
-    wirePlaceholderTile(ui->btn_treedisk,
-                        "目录占用",
-                        "将以树形视图展示各文件夹的占用空间，"
-                        "快速定位吃掉磁盘的大目录。");
     wirePlaceholderTile(ui->btn_dup,
                         "重复文件",
                         "将按文件内容找出重复文件，确认后安全释放磁盘空间。");
@@ -637,6 +633,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::ProcessList:
         handleProcessList();
+        break;
+    case Task::DiskUsage:
+        handleDiskUsage();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -886,6 +885,10 @@ void MainWindow::setupSystem()
     // 进程列表（只读）
     connect(ui->btn_process, &QAbstractButton::clicked,
             this, &MainWindow::runProcessList);
+
+    // 目录占用分析（只读）
+    connect(ui->btn_treedisk, &QAbstractButton::clicked,
+            this, &MainWindow::runDiskUsage);
 }
 
 void MainWindow::runHealthCheck()
@@ -1440,12 +1443,13 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardDiskHealth->setVisible(card == ui->cardDiskHealth);
     ui->cardHwinfo->setVisible(card == ui->cardHwinfo);
     ui->cardProcesses->setVisible(card == ui->cardProcesses);
+    ui->cardDiskUsage->setVisible(card == ui->cardDiskUsage);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
     if (card == ui->cardStartup || card == ui->cardProcesses)
         page = ui->pageManage;
-    else if (card == ui->cardLargeFiles)
+    else if (card == ui->cardLargeFiles || card == ui->cardDiskUsage)
         page = ui->pageTools;
     else if (card == ui->cardDiskHealth || card == ui->cardHwinfo)
         page = ui->pageHardware;
@@ -2202,6 +2206,186 @@ void MainWindow::addProcessRow(const QString &pid, const QString &name,
     layout->addLayout(text, 1);
 
     ui->processesRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 目录占用
+
+void MainWindow::runDiskUsage()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/diskusage.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少统计脚本",
+                    "未找到 ps1\\diskusage.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    // 让用户选择要分析的目录；取消则不执行
+    const QString root = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("选择要分析的目录"), QDir::homePath());
+    if (root.isEmpty())
+        return;
+
+    ++m_flow;
+
+    clearLog();
+    appendLog(QStringLiteral("正在统计 %1 的目录占用，目录越大耗时越久，请稍候……")
+                  .arg(QDir::toNativeSeparators(root)));
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->diskUsageRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->diskUsageSummary->setText(QStringLiteral("正在统计……"));
+    showSystemResultCard(ui->cardDiskUsage);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Root"), QDir::toNativeSeparators(root)
+    };
+
+    m_task = Task::DiskUsage;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleDiskUsage()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("DISKUSAGE_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("统计目录占用失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->diskUsageSummary->setText(QStringLiteral("统计失败"));
+        showMessage("统计目录占用失败",
+                    "未能从 PowerShell 获取有效的统计结果。\n\n"
+                    "请确认目录仍然存在，或更换目录后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    if (data.contains(QStringLiteral("error"))) {
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->diskUsageSummary->setText(QStringLiteral("目录不存在或无法访问"));
+        showMessage("无法统计该目录",
+                    "所选目录不存在、已被移动，或当前账户无权读取。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QString root = data.value(QStringLiteral("root")).toString();
+    const qint64 total = static_cast<qint64>(
+        data.value(QStringLiteral("total")).toDouble());
+    const int folders = data.value(QStringLiteral("folders")).toInt();
+
+    // 只有一个子目录时 PowerShell 可能输出对象而不是数组
+    QJsonArray items;
+    const QJsonValue value = data.value(QStringLiteral("items"));
+    if (value.isArray())
+        items = value.toArray();
+    else if (value.isObject())
+        items.append(value.toObject());
+
+    int shown = 0;
+    for (const QJsonValue &item : items) {
+        if (!item.isObject())
+            continue;
+        const QJsonObject object = item.toObject();
+        const QString name = object.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+
+        const qint64 size = static_cast<qint64>(
+            object.value(QStringLiteral("size")).toDouble());
+        const int files = object.value(QStringLiteral("files")).toInt();
+
+        int percent = 0;
+        if (total > 0)
+            percent = static_cast<int>(size * 100.0 / total + 0.5);
+
+        addUsageRow(QStringLiteral("%1%").arg(percent), name,
+                    QStringLiteral("%1 · %2 个文件")
+                        .arg(formatFileSize(size)).arg(files));
+        ++shown;
+    }
+
+    QString summary;
+    if (shown == 0) {
+        summary = QStringLiteral("%1 下没有可统计的子目录")
+                      .arg(QDir::toNativeSeparators(root));
+    } else {
+        summary = QStringLiteral("%1 · 共 %2 · %3 个子目录")
+                      .arg(QDir::toNativeSeparators(root),
+                           formatFileSize(total))
+                      .arg(folders);
+        if (folders > shown)
+            summary += QStringLiteral("（列出占用最大的 %1 个）").arg(shown);
+        summary += QStringLiteral("（只读统计）");
+    }
+
+    ui->diskUsageSummary->setText(summary);
+    ui->diskUsageScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addUsageRow(const QString &percent, const QString &name,
+                             const QString &detail)
+{
+    QWidget *row = new QWidget(ui->diskUsageRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(percent, row);
+    badge->setObjectName(QStringLiteral("usageBadge"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(48);
+
+    QLabel *title = new QLabel(name, row);
+    title->setObjectName(QStringLiteral("usageName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("usageDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->diskUsageRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具
