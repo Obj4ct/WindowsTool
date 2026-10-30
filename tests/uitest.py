@@ -92,6 +92,12 @@ TILES = {
     "test": (836, 238),      # 网络测试
 }
 
+# 侧边导航项的纵向坐标（同样基于 996x759 量取）
+NAV_Y = {
+    "网络": 168,
+    "系统": 213,
+}
+
 passed = 0
 failed = 0
 
@@ -193,20 +199,62 @@ def capture(hwnd, path):
     return w, h
 
 
+def move_window_to_origin(hwnd, x=120, y=80):
+    """
+    把窗口移到已知位置。
+
+    必须这么做：窗口位置由系统记忆，每次启动可能落在不同显示器上
+    （本机出现过 x=-1457 的负坐标），此时 SetCursorPos 到负坐标会落空，
+    点击打不到目标控件。
+    """
+    user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0001)  # SWP_NOSIZE
+    time.sleep(0.5)
+
+
+def window_origin(hwnd):
+    """取窗口左上角屏幕坐标（确保已调用 move_window_to_origin）"""
+    rect = wt.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    return rect.left, rect.top
+
+
 def click_tile(hwnd, key):
     """按磁贴名点击（自动按窗口实际尺寸换算坐标）"""
-    r = wt.RECT()
-    user32.GetWindowRect(hwnd, ctypes.byref(r))
-    sx = (r.right - r.left) / 996.0
-    sy = (r.bottom - r.top) / 759.0
+    move_window_to_origin(hwnd)
+    ox, oy = window_origin(hwnd)
+    rect = wt.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    sx = (rect.right - rect.left) / 996.0
+    sy = (rect.bottom - rect.top) / 759.0
     tx, ty = TILES[key]
     user32.SetForegroundWindow(hwnd)
     time.sleep(0.4)
-    user32.SetCursorPos(r.left + int(tx * sx), r.top + int(ty * sy))
+    user32.SetCursorPos(ox + int(tx * sx), oy + int(ty * sy))
     time.sleep(0.3)
     user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
     time.sleep(0.08)
     user32.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
+
+
+def click_nav(hwnd, label):
+    """点击侧边导航项（label: "网络" / "系统"）"""
+    move_window_to_origin(hwnd)
+    ox, oy = window_origin(hwnd)
+    rect = wt.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    sy = (rect.bottom - rect.top) / 759.0
+    ny = NAV_Y.get(label)
+    if ny is None:
+        return False
+    user32.SetForegroundWindow(hwnd)
+    time.sleep(0.4)
+    user32.SetCursorPos(ox + 66, oy + int(ny * sy))
+    time.sleep(0.3)
+    user32.mouse_event(0x0002, 0, 0, 0, 0)
+    time.sleep(0.08)
+    user32.mouse_event(0x0004, 0, 0, 0, 0)
+    time.sleep(0.8)
+    return True
 
 
 def test_log_output(exe, shot_dir):

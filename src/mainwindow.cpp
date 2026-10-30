@@ -66,7 +66,6 @@ MainWindow::MainWindow(QWidget *parent)
     setupNavigation();
     setupNetwork();
     setupSystem();
-    setupOtherTools();
 
     connect(m_runner, &ProcessRunner::outputReceived,
             this, [this](const QString &text) { appendLog(text); });
@@ -118,8 +117,7 @@ void MainWindow::setupTheme()
     };
     ui->navNetworkBtn->setIcon(navIcon(UiIcons::Icon::Network));
     ui->navSystemBtn->setIcon(navIcon(UiIcons::Icon::Monitor));
-    ui->navToolsBtn->setIcon(navIcon(UiIcons::Icon::Grid));
-    for (QPushButton *b : {ui->navNetworkBtn, ui->navSystemBtn, ui->navToolsBtn}) {
+    for (QPushButton *b : {ui->navNetworkBtn, ui->navSystemBtn}) {
         b->setIconSize(QSize(18, 18));
     }
 
@@ -136,23 +134,20 @@ void MainWindow::setupTheme()
     ui->btn_netWorkTest->setIcon(tileIcon(UiIcons::Icon::Activity));
     ui->btn_cleaner->setIcon(tileIcon(UiIcons::Icon::Clean));
     ui->btn_fixWhite->setIcon(tileIcon(UiIcons::Icon::Picture));
-    ui->btn_prt->setIcon(tileIcon(UiIcons::Icon::Camera));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
     for (QToolButton *b : {ui->btn_autoCheck, ui->btn_showNetWork,
                             ui->btn_netWorkTest, ui->btn_cleaner,
-                            ui->btn_fixWhite, ui->btn_prt}) {
+                            ui->btn_fixWhite}) {
         b->setIconSize(QSize(30, 30));
     }
 
     // 次级按钮图标
     ui->btn_refreshDNS->setIcon(UiIcons::make(UiIcons::Icon::Refresh, QColor("#6B7A93"), 16));
     ui->btn_resetWinSock->setIcon(UiIcons::make(UiIcons::Icon::Reset, QColor("#6B7A93"), 16));
-    ui->btn_key->setIcon(UiIcons::make(UiIcons::Icon::Keyboard, QColor("#6B7A93"), 16));
 
     // 控制台
     ui->textBrowser->setOpenExternalLinks(true);
-    ui->shortcutView->setOpenExternalLinks(true);
 
     // 清空日志
     connect(ui->clearLogButton, &QPushButton::clicked,
@@ -236,7 +231,6 @@ void MainWindow::setupNavigation()
 
     connect(ui->navNetworkBtn, &QAbstractButton::clicked, this, [switchTo]() { switchTo(0); });
     connect(ui->navSystemBtn, &QAbstractButton::clicked, this, [switchTo]() { switchTo(1); });
-    connect(ui->navToolsBtn, &QAbstractButton::clicked, this, [switchTo]() { switchTo(2); });
 
     // 默认停在第一页
     ui->navNetworkBtn->setChecked(true);
@@ -257,26 +251,30 @@ void MainWindow::setupNetwork()
 
     // 刷新 DNS
     connect(ui->btn_refreshDNS, &QPushButton::clicked, this, [this]() {
-        if (!confirmAction("提示",
-                           "这个操作可以修复网络配置，确保网络配置正常工作。点击确定开始执行。"))
+        if (!confirmAction("刷新网络配置",
+                           "此操作将重置全部活动网卡的 DNS 配置，并清除本机 DNS 解析缓存。"
+                           "执行期间网络可能短暂不可用。\n\n是否继续？"))
             return;
 
         clearLog();
-        appendLog("请等待，正在刷新网络配置……");
+        appendLog("正在刷新网络配置，请稍候……");
         runFixDns();
     });
 
     // 刷新 winsock
     connect(ui->btn_resetWinSock, &QPushButton::clicked, this, [this]() {
-        if (!confirmAction("警告！",
-                           "这个命令可以重新初始化网络环境，以解决由于软件冲突、病毒原因造成的参数错误问题。"
-                           "但是会导致部分电脑网速变慢，具体情况取决于电脑网络，除非别无选择，否则请谨慎操作！"
-                           "操作完成之后请重启电脑，然后在本软件选择\"刷新网络配置\"，"
-                           "使用之后如果出现网速变慢等问题，请联系开发人员"))
+        if (!confirmAction("重置 Winsock",
+                           "此操作将重新初始化 Winsock 套接字目录，用于修复因软件冲突或"
+                           "安全软件残留导致的网络协议异常。\n\n"
+                           "注意：重置后部分网络性能可能下降，且需要重启计算机才能完全生效。\n\n"
+                           "是否继续？"))
             return;
 
         if (!batExists("winsockReset.bat")) {
-            showMessage("错误", "找不到脚本文件 winsockReset.bat", QMessageBox::Critical);
+            showMessage("缺少脚本文件",
+                        "未找到所需的脚本文件 winsockReset.bat。\n\n"
+                        "请确认程序目录下的 bat 文件夹完整，或重新获取程序。",
+                        QMessageBox::Critical);
             return;
         }
 
@@ -327,7 +325,7 @@ void MainWindow::onTaskFailed(const QString &reason)
 {
     appendLog("-------------------");
     appendLog(QStringLiteral("执行失败：%1").arg(reason));
-    showMessage("执行失败", reason, QMessageBox::Critical);
+    showMessage("操作执行失败", reason, QMessageBox::Critical);
     m_task = Task::None;
 }
 
@@ -383,21 +381,24 @@ void MainWindow::handlePingTest()
     const QString output = m_runner->collectedOutput();
 
     if (isPingTimeout(output)) {
-        showMessage("连接错误",
-                    "网络连接出现问题，请检查是否连接网络（建议多检测几次）。"
-                    "如果已经连接，建议使用自动检测来检查问题",
+        showMessage("连接超时",
+                    "在规定时间内未收到目标主机的响应。\n\n"
+                    "可能原因：网络尚未连接、目标站点不可达，或存在代理/防火墙拦截。\n\n"
+                    "建议使用「自动检测并修复」定位具体故障环节。",
                     QMessageBox::Critical);
         return;
     }
 
     if (isPingHostUnknown(output)) {
-        showMessage("连接错误",
-                    "无法解析主机名，可能是 DNS 配置有问题，建议使用\"刷新网络配置\"修复",
+        showMessage("域名解析失败",
+                    "无法将目标域名解析为 IP 地址。\n\n"
+                    "可能原因：DNS 服务器不可用，或 DNS 配置有误。\n\n"
+                    "建议使用「刷新网络配置」重置 DNS 设置。",
                     QMessageBox::Critical);
         return;
     }
 
-    showMessage("成功", "你可以正常上网！");
+    showMessage("连通性正常", "目标主机响应正常，网络连通性测试已通过。");
 }
 
 void MainWindow::handleDnsCheck()
@@ -424,12 +425,15 @@ void MainWindow::handleDnsCheck()
 void MainWindow::runFixDns()
 {
     if (!batExists("fixDNS.bat")) {
-        showMessage("错误", "找不到脚本文件 fixDNS.bat", QMessageBox::Critical);
+        showMessage("缺少脚本文件",
+                    "未找到所需的脚本文件 fixDNS.bat。\n\n"
+                    "请确认程序目录下的 bat 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
         return;
     }
 
     appendLog("-------------------");
-    appendLog("修复网络配置中……");
+    appendLog("正在刷新网络配置，请稍候……");
     appendLog("-------------------");
 
     m_runner->runBat("fixDNS.bat");
@@ -441,21 +445,23 @@ void MainWindow::runFixDns()
 void MainWindow::askNetworkRecovered()
 {
     appendLog("-------------------");
-    appendLog("网络配置修复完成，正在检测是否可以上网……");
+    appendLog("网络配置已重置，请确认当前访问网页是否正常。");
 
-    QMessageBox box(QMessageBox::Question, "疑问", "是否可以上网？",
+    QMessageBox box(QMessageBox::Question, "验证修复结果",
+                    "网络配置已重置。请问当前是否可以正常访问网页？",
                     QMessageBox::Yes | QMessageBox::No, this);
     box.setWindowIcon(QIcon(":/ico/question.png"));
-    box.setButtonText(QMessageBox::Yes, "可以");
-    box.setButtonText(QMessageBox::No, "不可以");
+    box.setButtonText(QMessageBox::Yes, "可以正常访问");
+    box.setButtonText(QMessageBox::No, "仍然无法访问");
 
     if (box.exec() == QMessageBox::Yes) {
-        showMessage("开发者的话", "好的，这对你来说是一个好软件");
-        appendLog("成功啦！感谢使用本软件。");
+        appendLog("验证通过，网络已恢复正常。");
     } else {
-        showMessage("开发者的话",
-                    "软件为第一个版本，难免会有问题，请点击右上角\"关于\"来联系作者");
-        appendLog("失败了！请联系开发者……555（哭了）");
+        showMessage("问题仍未解决",
+                    "网络配置已重置，但访问仍不正常。\n\n"
+                    "可能是运营商侧故障、代理配置异常，或被安全软件拦截。\n\n"
+                    "可通过右上角「关于」获取联系方式以获取进一步支持。");
+        appendLog("验证未通过，请检查代理设置或联系技术支持。");
     }
 }
 
@@ -474,16 +480,19 @@ void MainWindow::setupSystem()
     // 清理系统垃圾
     connect(ui->btn_cleaner, &QAbstractButton::clicked, this, [this]() {
         if (!batExists("cleaner.bat")) {
-            showMessage("错误", "找不到脚本文件 cleaner.bat", QMessageBox::Critical);
+            showMessage("缺少脚本文件",
+                        "未找到所需的脚本文件 cleaner.bat。\n\n"
+                        "请确认程序目录下的 bat 文件夹完整，或重新获取程序。",
+                        QMessageBox::Critical);
             return;
         }
 
         clearLog();
         appendLog("-------------------");
-        appendLog("此操作会清理系统临时文件，不会删除您的个人文档。");
+        appendLog("即将清理系统临时文件。此操作不会影响个人文档。");
         appendLog("-------------------");
-        appendLog("之后会弹出一个窗口，请点击\"是\"，清理时长取决于垃圾数量，"
-                  "完成后会显示\"清理系统垃圾完成！\"，请耐心等待……");
+        appendLog("系统将弹出权限请求窗口，请选择「是」以继续。"
+                  "清理时长取决于临时文件数量，请耐心等待。");
 
         m_runner->runBat("cleaner.bat");
     });
@@ -491,112 +500,17 @@ void MainWindow::setupSystem()
     // 修复桌面图标变白
     connect(ui->btn_fixWhite, &QAbstractButton::clicked, this, [this]() {
         if (!batExists("fixWhite.bat")) {
-            showMessage("错误", "找不到脚本文件 fixWhite.bat", QMessageBox::Critical);
+            showMessage("缺少脚本文件",
+                        "未找到所需的脚本文件 fixWhite.bat。\n\n"
+                        "请确认程序目录下的 bat 文件夹完整，或重新获取程序。",
+                        QMessageBox::Critical);
             return;
         }
 
         clearLog();
-        appendLog("正在重建桌面图标缓存，屏幕会短暂黑屏，请稍候……");
+        appendLog("正在重建桌面图标缓存，期间屏幕会短暂黑屏，请稍候……");
         m_runner->runBat("fixWhite.bat");
     });
-
-    // 截图工具（仅提示快捷键，不执行任何命令）
-    connect(ui->btn_prt, &QAbstractButton::clicked, this, [this]() {
-        QMessageBox box(QMessageBox::Question, "别开玩笑",
-                        "别傻傻地登录 QQ/微信进行截图啦，你不觉得太麻烦了？"
-                        "按下 win(Alt 左边那个和开始菜单一样的图标)+shift+s "
-                        "就可以快速截图了(只支持 win10 和 win10 以上系统)，"
-                        "然后直接 ctrl+v 粘贴就好",
-                        QMessageBox::Yes | QMessageBox::No, this);
-        box.setWindowIcon(QIcon(":/ico/what.png"));
-        box.setButtonText(QMessageBox::Yes, "知道了");
-        box.setButtonText(QMessageBox::No, "你管得着吗？");
-
-        if (box.exec() == QMessageBox::Yes) {
-            showMessage("开发者的话", "真是个提高效率的好方法");
-            clearLog();
-            appendLog("按下 win(Alt 左边那个和开始菜单一样的图标)+shift+s 就可以快速截图了"
-                      "(只支持 win10 和 win10 以上系统)，然后直接 ctrl+v 粘贴就好");
-        } else {
-            showMessage("开发者的话", "555，你开心就好了");
-        }
-    });
-}
-
-// ---------------------------------------------------------------- 其他工具
-
-void MainWindow::setupOtherTools()
-{
-    // 快捷键速查表：以 HTML 渲染在专用视图里，比往控制台灌文本更易读
-    struct Shortcut {
-        const char *keys;
-        const char *desc;
-    };
-    static const Shortcut shortcuts[] = {
-        {"Ctrl + C / V", "复制 / 粘贴"},
-        {"Win + Shift + S", "快速截图（Win10 及以上），随后 Ctrl+V 粘贴"},
-        {"Win + Ctrl + Shift + B", "刷新显卡驱动，解决画面卡顿但声音正常的问题"},
-        {"Win + V", "打开剪贴板历史记录，直接粘贴上一次的复制内容"},
-        {"Win + D", "显示桌面"},
-        {"Win + G", "打开游戏模式"},
-        {"Win + L", "锁屏"},
-        {"Win + E", "打开文件资源管理器"},
-        {"Ctrl + F", "搜索当前页面内容"},
-        {"Ctrl + S", "及时保存，避免意外造成损失"}
-    };
-
-    QString html = QStringLiteral(
-        "<table cellspacing='0' cellpadding='7'>");
-    for (const Shortcut &s : shortcuts) {
-        html += QStringLiteral(
-                    "<tr>"
-                    "<td width='210'><b style='color:#1A5FD0;'>%1</b></td>"
-                    "<td style='color:#4A576F;'>%2</td>"
-                    "</tr>")
-                    .arg(QString::fromUtf8(s.keys), QString::fromUtf8(s.desc));
-    }
-    html += QStringLiteral("</table>");
-    ui->shortcutView->setHtml(html);
-
-    // 在控制台中查看（保留原行为）
-    connect(ui->btn_key, &QPushButton::clicked, this, &MainWindow::showShortcutList);
-}
-
-void MainWindow::showShortcutList()
-{
-    clearLog();
-    const QStringList shortcuts = {
-        "ctrl+C/V：这么简单你应该不会不知道",
-        "win(Alt 左边那个和开始菜单一样的图标)+shift+s：非常强大的快速截图工具，"
-        "支持多方式截图，只支持 win10 和 win10 以上系统",
-        "win+ctrl+shift+B：刷新显卡驱动，如果你玩游戏遇到游戏声音还在但是画面卡了，"
-        "就可以用这个刷新显卡驱动，只支持 win10 和 win10 以上系统",
-        "win+V：打开剪贴板历史记录，选中内容之后直接 ctrl+v，只支持 win10 和 win10 以上系统",
-        "win+D：显示桌面",
-        "win+G：打开游戏模式，只支持 win10 和 win10 以上系统",
-        "win+L：锁屏",
-        "ctrl+f：搜索当前页面内容",
-        "ctrl+s：虽然都知道是\"保存\"，但是希望在工作的时候经常使用，"
-        "为了避免未知的情况，造成损失"
-    };
-    for (const QString &line : shortcuts) {
-        appendLog(line);
-        appendLog("                   ");
-    }
-    appendLog("-------------------");
-    appendLog("更多内容请点击下方链接");
-
-    // 链接需要真正的 HTML 渲染，单独走 insertHtml（内容是程序内写死的常量，安全）
-    QTextCursor cursor(ui->textBrowser->document());
-    cursor.movePosition(QTextCursor::End);
-    if (!ui->textBrowser->document()->isEmpty()) {
-        cursor.insertBlock();
-    }
-    cursor.insertHtml(QStringLiteral(
-        "<a href=\"https://support.microsoft.com/zh-cn/windows/windows-%E7%9A%84%E9%94%AE%E7%9B%98%E5%BF%AB%E6%8D%B7%E6%96%B9%E5%BC%8F-dcc61a57-8ff0-cffe-9796-cb9706c75eec\" "
-        "style=\"color:#6FA8FF;\">快捷键大全</a>"));
-    ui->textBrowser->setTextCursor(cursor);
-    ui->textBrowser->ensureCursorVisible();
 }
 
 // ---------------------------------------------------------------- 通用工具

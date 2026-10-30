@@ -43,7 +43,6 @@ private:
     void setupNavigation();
     void setupNetwork();
     void setupSystem();
-    void setupOtherTools();
 
     // 异步任务分发
     void onTaskFinished(int exitCode);
@@ -66,7 +65,6 @@ private:
     bool confirmAction(const QString &title, const QString &text,
                        QMessageBox::Icon icon = QMessageBox::Warning);
     bool batExists(const QString &fileName) const;
-    void showShortcutList();
 
     Ui::MainWindow *ui;
     ProcessRunner *m_runner;
