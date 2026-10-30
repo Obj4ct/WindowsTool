@@ -199,6 +199,25 @@ void drawIcon(QPainter &p, Icon icon, const QColor &color)
                               QPointF(13.8, 10.6), QPointF(17.6, 10.6)}));
         break;
     }
+    case Icon::Rocket: {
+        // 机身
+        QPainterPath body;
+        body.moveTo(12.0, 2.4);
+        body.lineTo(16.2, 9.6);
+        body.lineTo(16.2, 15.0);
+        body.lineTo(7.8, 15.0);
+        body.lineTo(7.8, 9.6);
+        body.closeSubpath();
+        p.drawPath(body);
+        // 舷窗
+        p.drawEllipse(QRectF(10.3, 7.8, 3.4, 3.4));
+        // 尾翼
+        p.drawPath(polyline({QPointF(7.8, 11.8), QPointF(4.4, 15.6), QPointF(7.8, 15.0)}));
+        p.drawPath(polyline({QPointF(16.2, 11.8), QPointF(19.6, 15.6), QPointF(16.2, 15.0)}));
+        // 尾焰
+        p.drawPath(polyline({QPointF(10.4, 15.4), QPointF(12.0, 20.8), QPointF(13.6, 15.4)}));
+        break;
+    }
     case Icon::Camera: {
         p.drawLine(QPointF(6.0, 2.6), QPointF(6.0, 6.6));
         p.drawLine(QPointF(6.0, 2.6), QPointF(10.0, 2.6));

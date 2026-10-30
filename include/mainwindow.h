@@ -41,7 +41,8 @@ private:
         Cleaner,         ///< 清理系统临时文件
         WinsockReset,    ///< 重置 Winsock
         FixWhite,        ///< 重建桌面图标缓存
-        HealthCheck      ///< 系统体检（healthcheck.ps1）
+        HealthCheck,     ///< 系统体检（healthcheck.ps1）
+        StartupList      ///< 开机启动项读取（startup.ps1）
     };
 
     void setupTheme();
@@ -67,6 +68,12 @@ private:
     void handleHealthCheck();
     void addHealthRow(const QString &state, const QString &name,
                       const QString &detail);
+
+    // 开机启动项
+    void runStartupList();
+    void handleStartupList();
+    void addStartupRow(const QString &source, const QString &name,
+                       const QString &command);
 
     // 工具方法
     void appendLog(const QString &text);

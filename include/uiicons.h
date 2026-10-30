@@ -31,6 +31,7 @@ enum class Icon {
     Clean,       ///< 清理（星芒）
     Picture,     ///< 桌面图标（图片）
     Health,      ///< 电脑体检（心形 + 脉搏）
+    Rocket,      ///< 开机启动（火箭）
     Camera,      ///< 截图（裁切框）
     Keyboard,    ///< 快捷键
     Dots,        ///< 更多（三点）

@@ -13,6 +13,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -24,6 +25,7 @@
 #include <QStyle>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QScrollBar>
 #include <QTimer>
 #include <QToolButton>
 #include <QUrl>
@@ -69,6 +71,18 @@ QString formatUptime(qint64 seconds)
     return QStringLiteral("%1 分钟").arg(minutes);
 }
 
+/** 启动项来源代码（ps1 输出英文，避免脚本编码问题）→ 中文标签 */
+QString startupSourceLabel(const QString &code)
+{
+    if (code == QLatin1String("machine") || code == QLatin1String("machine32"))
+        return QStringLiteral("所有用户");
+    if (code == QLatin1String("startup"))
+        return QStringLiteral("启动文件夹");
+    if (code == QLatin1String("startupCommon"))
+        return QStringLiteral("公共启动项");
+    return QStringLiteral("当前用户");
+}
+
 /** 把样式表文件读入并应用到整个应用 */
 bool applyStyleSheet(QApplication &app)
 {
@@ -100,8 +114,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_runner, &ProcessRunner::outputReceived,
             this, [this](const QString &text) {
-                // 体检脚本只输出一行 JSON 标记，不把原始数据刷进控制台
-                if (m_task == Task::HealthCheck)
+                // 体检/启动项脚本只输出一行 JSON 标记，不把原始数据刷进控制台
+                if (m_task == Task::HealthCheck || m_task == Task::StartupList)
                     return;
                 appendLog(text);
             });
@@ -171,11 +185,13 @@ void MainWindow::setupTheme()
     ui->btn_cleaner->setIcon(tileIcon(UiIcons::Icon::Clean));
     ui->btn_fixWhite->setIcon(tileIcon(UiIcons::Icon::Picture));
     ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
+    ui->btn_startup->setIcon(tileIcon(UiIcons::Icon::Rocket));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
     for (QToolButton *b : {ui->btn_autoCheck, ui->btn_showNetWork,
                             ui->btn_netWorkTest, ui->btn_cleaner,
-                            ui->btn_fixWhite, ui->btn_healthCheck}) {
+                            ui->btn_fixWhite, ui->btn_healthCheck,
+                            ui->btn_startup}) {
         b->setIconSize(QSize(30, 30));
     }
 
@@ -376,6 +392,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::HealthCheck:
         handleHealthCheck();
+        break;
+    case Task::StartupList:
+        handleStartupList();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -605,6 +624,10 @@ void MainWindow::setupSystem()
     // 电脑体检
     connect(ui->btn_healthCheck, &QAbstractButton::clicked,
             this, &MainWindow::runHealthCheck);
+
+    // 开机启动项（只读）
+    connect(ui->btn_startup, &QAbstractButton::clicked,
+            this, &MainWindow::runStartupList);
 }
 
 void MainWindow::runHealthCheck()
@@ -635,7 +658,13 @@ void MainWindow::runHealthCheck()
     ui->healthSummary->setProperty("state", QString());
     ui->healthSummary->style()->unpolish(ui->healthSummary);
     ui->healthSummary->style()->polish(ui->healthSummary);
+    ui->cardStartup->setVisible(false);   // 两个结果卡片同时只显示一个
     ui->cardHealth->setVisible(true);
+
+    // 系统页是可滚动的，结果显示后把对应卡片滚入视野
+    QTimer::singleShot(0, this, [this] {
+        ui->pageSystem->ensureWidgetVisible(ui->cardHealth);
+    });
 
     // 直接用 PowerShell 的 exe + 参数列表启动，不再把整条命令行交给 cmd.exe。
     // 整串命令行里的双引号会先被 cmd.exe 解析、再被 QProcess 做参数转义，
@@ -853,6 +882,149 @@ void MainWindow::addHealthRow(const QString &state, const QString &name,
     layout->addWidget(desc, 1);
 
     ui->healthRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 开机启动项
+
+void MainWindow::runStartupList()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/startup.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少启动项脚本",
+                    "未找到 ps1\\startup.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在读取开机启动项，请稍候……");
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->startupRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->startupSummary->setText(QStringLiteral("正在读取……"));
+    ui->cardHealth->setVisible(false);    // 两个结果卡片同时只显示一个
+    ui->cardStartup->setVisible(true);
+
+    // 系统页是可滚动的，结果显示后把对应卡片滚入视野
+    QTimer::singleShot(0, this, [this] {
+        ui->pageSystem->ensureWidgetVisible(ui->cardStartup);
+    });
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::StartupList;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleStartupList()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("STARTUP_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError) {
+        appendLog("-------------------");
+        appendLog("读取启动项失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->startupSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取启动项失败",
+                    "未能从 PowerShell 获取有效的启动项列表。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    // 只有一项时 PowerShell 可能输出单个对象而不是数组
+    QJsonArray items;
+    if (document.isArray())
+        items = document.array();
+    else if (document.isObject())
+        items.append(document.object());
+
+    int total = 0;
+    for (const QJsonValue &value : items) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject object = value.toObject();
+        const QString name = object.value(QStringLiteral("name")).toString();
+        const QString command = object.value(QStringLiteral("command")).toString();
+        if (name.isEmpty() && command.isEmpty())
+            continue;
+
+        addStartupRow(startupSourceLabel(object.value(QStringLiteral("source")).toString()),
+                      name, command);
+        ++total;
+    }
+
+    QString summary;
+    if (total == 0)
+        summary = QStringLiteral("未发现开机启动项");
+    else
+        summary = QStringLiteral("共 %1 项开机启动 · 仅展示，暂不支持禁用").arg(total);
+
+    ui->startupSummary->setText(summary);
+    ui->startupScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addStartupRow(const QString &source, const QString &name,
+                               const QString &command)
+{
+    QWidget *row = new QWidget(ui->startupRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(source, row);
+    badge->setObjectName(QStringLiteral("startupSource"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(72);
+
+    QLabel *title = new QLabel(name.isEmpty() ? QStringLiteral("(未命名)") : name, row);
+    title->setObjectName(QStringLiteral("startupName"));
+
+    QLabel *desc = new QLabel(command, row);
+    desc->setObjectName(QStringLiteral("startupCommand"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->startupRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具
