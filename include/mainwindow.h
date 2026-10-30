@@ -50,7 +50,8 @@ private:
         HwInfo,          ///< 硬件信息快照（hwinfo.ps1）
         ProcessList,     ///< 进程列表（processes.ps1）
         DiskUsage,       ///< 目录占用分析（diskusage.ps1）
-        UninstallList    ///< 已安装程序清单（uninstall.ps1）
+        UninstallList,   ///< 已安装程序清单（uninstall.ps1）
+        DriverList       ///< 驱动清单（drivers.ps1）
     };
 
     void setupTheme();
@@ -134,6 +135,11 @@ private:
     void handleUninstallList();
     void addAppRow(const QString &size, const QString &name,
                    const QString &detail);
+
+    // 驱动清单（只读）
+    void runDriverList();
+    void handleDriverList();
+    void addDriverRow(const QString &name, const QString &detail);
 
     /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
     void showSystemResultCard(QWidget *card);

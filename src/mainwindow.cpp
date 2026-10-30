@@ -131,6 +131,43 @@ QString diskHealthLabel(const QString &code, QString *state)
     return QStringLiteral("未知");
 }
 
+/** 设备类别（WMI DeviceClass 全大写英文枚举）→ 中文标签，未收录的保留原值 */
+QString driverClassLabel(const QString &code)
+{
+    const QString key = code.toUpper();
+    if (key == QLatin1String("DISPLAY")) return QStringLiteral("显示适配器");
+    if (key == QLatin1String("MONITOR")) return QStringLiteral("显示器");
+    if (key == QLatin1String("KEYBOARD")) return QStringLiteral("键盘");
+    if (key == QLatin1String("MOUSE")) return QStringLiteral("鼠标");
+    if (key == QLatin1String("HIDCLASS")) return QStringLiteral("人体学输入设备");
+    if (key == QLatin1String("NET")) return QStringLiteral("网络适配器");
+    if (key == QLatin1String("USB")) return QStringLiteral("USB 控制器");
+    if (key == QLatin1String("HDC")) return QStringLiteral("磁盘控制器");
+    if (key == QLatin1String("DISKDRIVE")) return QStringLiteral("磁盘驱动器");
+    if (key == QLatin1String("CDROM")) return QStringLiteral("光驱");
+    if (key == QLatin1String("VOLUME")) return QStringLiteral("存储卷");
+    if (key == QLatin1String("MEDIA")) return QStringLiteral("音频设备");
+    if (key == QLatin1String("AUDIOENDPOINT")) return QStringLiteral("音频端点");
+    if (key == QLatin1String("AUDIOPROCESSINGOBJECT"))
+        return QStringLiteral("音频处理对象");
+    if (key == QLatin1String("BLUETOOTH")) return QStringLiteral("蓝牙");
+    if (key == QLatin1String("BATTERY")) return QStringLiteral("电池");
+    if (key == QLatin1String("CAMERA")) return QStringLiteral("摄像头");
+    if (key == QLatin1String("IMAGE")) return QStringLiteral("成像设备");
+    if (key == QLatin1String("PRINTER")) return QStringLiteral("打印机");
+    if (key == QLatin1String("SMARTCARDREADER"))
+        return QStringLiteral("智能卡读卡器");
+    if (key == QLatin1String("PROCESSOR")) return QStringLiteral("处理器");
+    if (key == QLatin1String("SYSTEM")) return QStringLiteral("系统设备");
+    if (key == QLatin1String("SENSOR")) return QStringLiteral("传感器");
+    if (key == QLatin1String("FIRMWARE")) return QStringLiteral("固件");
+    if (key == QLatin1String("SOFTWAREINFRASTRUCTURE"))
+        return QStringLiteral("软件设备");
+    if (key.isEmpty() || key == QLatin1String("UNKNOWN"))
+        return QStringLiteral("其他设备");
+    return code;
+}
+
 /** 把样式表文件读入并应用到整个应用 */
 bool applyStyleSheet(QApplication &app)
 {
@@ -169,7 +206,7 @@ MainWindow::MainWindow(QWidget *parent)
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
                     || m_task == Task::DiskHealth || m_task == Task::HwInfo
                     || m_task == Task::ProcessList || m_task == Task::DiskUsage
-                    || m_task == Task::UninstallList)
+                    || m_task == Task::UninstallList || m_task == Task::DriverList)
                     return;
                 appendLog(text);
             });
@@ -275,7 +312,7 @@ void MainWindow::setupTheme()
     ui->btn_startup->setIcon(tileIcon(UiIcons::Icon::Rocket));
     ui->btn_process->setIcon(tileIcon(UiIcons::Icon::Dots));
     ui->btn_uninstall->setIcon(tileIcon(UiIcons::Icon::Grid));
-    ui->btn_drivers->setIcon(grayIcon(UiIcons::Icon::Keyboard));
+    ui->btn_drivers->setIcon(tileIcon(UiIcons::Icon::Keyboard));
 
     // 实用工具
     ui->btn_largeFiles->setIcon(tileIcon(UiIcons::Icon::Disk));
@@ -484,11 +521,6 @@ void MainWindow::setupPlaceholders()
                         "将持续展示 CPU、内存、磁盘与网络的实时占用，"
                         "用于定位卡顿发生的具体时刻。");
 
-    wirePlaceholderTile(ui->btn_drivers,
-                        "驱动清单",
-                        "将列出已安装的驱动及其版本、日期与设备状态，"
-                        "便于排查设备异常。");
-
     wirePlaceholderTile(ui->btn_dup,
                         "重复文件",
                         "将按文件内容找出重复文件，确认后安全释放磁盘空间。");
@@ -636,6 +668,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::UninstallList:
         handleUninstallList();
+        break;
+    case Task::DriverList:
+        handleDriverList();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -893,6 +928,10 @@ void MainWindow::setupSystem()
     // 已安装程序清单（只读）
     connect(ui->btn_uninstall, &QAbstractButton::clicked,
             this, &MainWindow::runUninstallList);
+
+    // 驱动清单（只读）
+    connect(ui->btn_drivers, &QAbstractButton::clicked,
+            this, &MainWindow::runDriverList);
 }
 
 void MainWindow::runHealthCheck()
@@ -1449,11 +1488,12 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardProcesses->setVisible(card == ui->cardProcesses);
     ui->cardDiskUsage->setVisible(card == ui->cardDiskUsage);
     ui->cardUninstall->setVisible(card == ui->cardUninstall);
+    ui->cardDrivers->setVisible(card == ui->cardDrivers);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
     if (card == ui->cardStartup || card == ui->cardProcesses
-        || card == ui->cardUninstall)
+        || card == ui->cardUninstall || card == ui->cardDrivers)
         page = ui->pageManage;
     else if (card == ui->cardLargeFiles || card == ui->cardDiskUsage)
         page = ui->pageTools;
@@ -2554,6 +2594,151 @@ void MainWindow::addAppRow(const QString &size, const QString &name,
     layout->addLayout(text, 1);
 
     ui->uninstallRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 驱动清单
+
+void MainWindow::runDriverList()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/drivers.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少驱动清单脚本",
+                    "未找到 ps1\\drivers.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在读取驱动清单，请稍候……");
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->driversRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->driversSummary->setText(QStringLiteral("正在读取……"));
+    showSystemResultCard(ui->cardDrivers);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::DriverList;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleDriverList()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("DRIVERS_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("读取驱动清单失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->driversSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取驱动清单失败",
+                    "未能从 PowerShell 获取有效的驱动清单。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    const int total = data.value(QStringLiteral("total")).toInt();
+
+    // 只有一项时 PowerShell 可能输出对象而不是数组
+    QJsonArray items;
+    const QJsonValue value = data.value(QStringLiteral("items"));
+    if (value.isArray())
+        items = value.toArray();
+    else if (value.isObject())
+        items.append(value.toObject());
+
+    int shown = 0;
+    for (const QJsonValue &item : items) {
+        if (!item.isObject())
+            continue;
+        const QJsonObject object = item.toObject();
+        const QString name = object.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+
+        QStringList parts;
+        const QString deviceClass = object.value(QStringLiteral("class")).toString();
+        const QString version = object.value(QStringLiteral("version")).toString();
+        const QString manufacturer = object.value(QStringLiteral("manufacturer")).toString();
+        const QString date = object.value(QStringLiteral("date")).toString();
+        parts << QStringLiteral("类别 %1").arg(driverClassLabel(deviceClass));
+        if (!version.isEmpty())
+            parts << QStringLiteral("版本 %1").arg(version);
+        if (!manufacturer.isEmpty())
+            parts << manufacturer;
+        if (!date.isEmpty())
+            parts << QStringLiteral("发布于 %1").arg(date);
+
+        addDriverRow(name, parts.join(QStringLiteral(" · ")));
+        ++shown;
+    }
+
+    QString summary;
+    if (shown == 0) {
+        summary = QStringLiteral("未读取到驱动信息");
+    } else if (total > shown) {
+        summary = QStringLiteral("共 %1 个设备驱动 · 按设备类别列出前 %2 个（只读清单）")
+                      .arg(total).arg(shown);
+    } else {
+        summary = QStringLiteral("共 %1 个设备驱动 · 按设备类别排序（只读清单）")
+                      .arg(shown);
+    }
+
+    ui->driversSummary->setText(summary);
+    ui->driversScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addDriverRow(const QString &name, const QString &detail)
+{
+    QWidget *row = new QWidget(ui->driversRows);
+    QVBoxLayout *layout = new QVBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(2);
+
+    QLabel *title = new QLabel(name, row);
+    title->setObjectName(QStringLiteral("driverName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("driverDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    layout->addWidget(title);
+    layout->addWidget(desc);
+
+    ui->driversRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具
