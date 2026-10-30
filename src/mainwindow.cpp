@@ -11,9 +11,12 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QEasingCurve>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGraphicsDropShadowEffect>
+#include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -24,6 +27,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPixmap>
+#include <QPropertyAnimation>
 #include <QPushButton>
 #include <QStyle>
 #include <QTextCursor>
@@ -387,6 +391,17 @@ void MainWindow::setupTheme()
     ui->btn_refreshDNS->setIcon(UiIcons::make(UiIcons::Icon::Refresh, QColor("#6B7A93"), 16));
     ui->btn_resetWinSock->setIcon(UiIcons::make(UiIcons::Icon::Reset, QColor("#6B7A93"), 16));
 
+    // 卡片加一层柔和投影，让白色卡片从浅色渐变背景上浮起来
+    for (QFrame *card : findChildren<QFrame *>()) {
+        if (!card->objectName().startsWith(QLatin1String("card")))
+            continue;
+        auto *shadow = new QGraphicsDropShadowEffect(card);
+        shadow->setBlurRadius(24);
+        shadow->setOffset(0, 5);
+        shadow->setColor(QColor(28, 46, 80, 24));
+        card->setGraphicsEffect(shadow);
+    }
+
     // 控制台
     ui->textBrowser->setOpenExternalLinks(true);
 
@@ -498,6 +513,22 @@ void MainWindow::showPage(int index)
     const int count = int(sizeof(buttons) / sizeof(buttons[0]));
     if (index >= 0 && index < count)
         buttons[index]->setChecked(true);
+
+    // 页面切换做一次短暂淡入，替代生硬的整页硬切
+    if (QWidget *page = ui->stackedWidget->currentWidget()) {
+        auto *effect = new QGraphicsOpacityEffect(page);
+        page->setGraphicsEffect(effect);
+
+        auto *anim = new QPropertyAnimation(effect, "opacity", page);
+        anim->setDuration(160);
+        anim->setStartValue(0.3);
+        anim->setEndValue(1.0);
+        anim->setEasingCurve(QEasingCurve::OutCubic);
+        connect(anim, &QPropertyAnimation::finished, page, [page]() {
+            page->setGraphicsEffect(nullptr);
+        });
+        anim->start(QAbstractAnimation::DeleteWhenStopped);
+    }
 }
 
 // ---------------------------------------------------------------- 概览
@@ -686,18 +717,27 @@ void MainWindow::onTaskFinished(int exitCode)
     case Task::FixDnsManual:
         appendLog("-------------------");
         appendLog("网络配置刷新完成");
+        showMessage("网络配置已刷新",
+                    "已把默认路由网卡的 DNS 恢复为自动获取，并清空本机 DNS 解析缓存。\n\n"
+                    "若仍无法上网，请尝试重启计算机。");
         break;
     case Task::Cleaner:
         appendLog("-------------------");
         appendLog("系统临时文件清理完成");
+        showMessage("清理完成", "系统临时文件已清理完毕。");
         break;
     case Task::WinsockReset:
         appendLog("-------------------");
         appendLog("Winsock 重置完成，请重启计算机后生效");
+        showMessage("Winsock 已重置",
+                    "套接字目录已重新初始化，需要重启计算机后才能完全生效。");
         break;
     case Task::FixWhite:
         appendLog("-------------------");
         appendLog("桌面图标缓存重建完成");
+        showMessage("图标缓存已重建",
+                    "桌面图标缓存已重建完成。\n\n"
+                    "若图标仍未恢复，可重启资源管理器或重启计算机后再查看。");
         break;
     case Task::HealthCheck:
         handleHealthCheck();
@@ -754,8 +794,7 @@ void MainWindow::onTaskFinished(int exitCode)
         handleDnsWrite();
         break;
     case Task::NetInfo:
-        appendLog("-------------------");
-        appendLog("网络信息获取完成");
+        handleNetworkInfo();
         break;
     case Task::None:
         break;
@@ -812,6 +851,11 @@ void MainWindow::handleAutoCheckPing()
     if (isPingTimeout(output)) {
         appendLog("-------------------");
         appendLog("网站请求超时，请检查你的网络网络是否连接！并确保在电脑设置中关闭了代理");
+        showMessage("网络连接异常",
+                    "检测到目标网站请求超时。\n\n"
+                    "建议先确认网络已连接，并在系统设置中关闭代理后重试，"
+                    "也可以点「刷新网络配置」重置 DNS。",
+                    QMessageBox::Warning);
         return;
     }
 
@@ -871,6 +915,8 @@ void MainWindow::handleDnsCheck()
 
     appendLog("-------------------");
     appendLog("网络连接正常，自动检测完成");
+    showMessage("网络连接正常",
+                "已通过连通性与 DNS 解析检查，没有发现需要修复的问题。");
 }
 
 /**
@@ -931,6 +977,54 @@ void MainWindow::showNetworkInfo()
     appendLog("正在获取网络信息……");
     m_task = Task::NetInfo;
     m_runner->runCommand(QStringLiteral("ipconfig /all"));
+}
+
+/**
+ * 展示 ipconfig /all 的完整结果。
+ *
+ * 运行日志面板默认隐藏，这类纯文本结果改为可滚动、可复制的弹窗呈现，
+ * 避免功能因为没有输出区域而失去反馈。
+ */
+void MainWindow::handleNetworkInfo()
+{
+    const QString output = m_runner->collectedOutput().trimmed();
+
+    if (output.isEmpty()) {
+        appendLog("-------------------");
+        appendLog("网络信息获取失败：没有任何输出。");
+        showMessage("获取网络信息失败",
+                    "未能读取到网络配置信息，请稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    appendLog("-------------------");
+    appendLog("网络信息获取完成");
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("网络信息"));
+    dialog.setWindowIcon(windowIcon());
+    dialog.setMinimumSize(760, 540);
+
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(16, 16, 16, 12);
+    layout->setSpacing(10);
+
+    auto *view = new QPlainTextEdit(&dialog);
+    view->setReadOnly(true);
+    view->setPlainText(output);
+    view->setStyleSheet(QStringLiteral(
+        "QPlainTextEdit { background:#151D2E; border:1px solid #0D1422;"
+        " border-radius:10px; color:#DCE4F0; padding:10px;"
+        " font-family:\"Consolas\",\"Courier New\",monospace; font-size:12px; }"));
+    layout->addWidget(view, 1);
+
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    buttons->button(QDialogButtonBox::Close)->setText(QStringLiteral("关闭"));
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    dialog.exec();
 }
 
 // ---------------------------------------------------------------- 系统优化

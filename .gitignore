@@ -72,6 +72,10 @@ ui_*.h
 *.msix
 *.appx
 
+# ---- Python ----
+__pycache__/
+*.pyc
+
 # ---- 系统垃圾 ----
 Thumbs.db
 desktop.ini

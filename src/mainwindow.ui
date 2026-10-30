@@ -353,7 +353,7 @@
          <item>
           <widget class="QStackedWidget" name="stackedWidget">
            <property name="sizePolicy">
-            <sizepolicy hsizetype="Expanding" vsizetype="Minimum">
+            <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
              <horstretch>0</horstretch>
              <verstretch>0</verstretch>
             </sizepolicy>
@@ -682,11 +682,14 @@
                   </widget>
                  </item>
                  <item>
-                  <layout class="QHBoxLayout" name="tileRowNet">
-                   <property name="spacing">
+                  <layout class="QGridLayout" name="tileGridNet">
+                   <property name="horizontalSpacing">
                     <number>12</number>
                    </property>
-                   <item>
+                   <property name="verticalSpacing">
+                    <number>12</number>
+                   </property>
+                   <item row="0" column="0">
                     <widget class="QToolButton" name="btn_autoCheck">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -708,7 +711,7 @@
                      </property>
                     </widget>
                    </item>
-                   <item>
+                   <item row="0" column="1">
                     <widget class="QToolButton" name="btn_showNetWork">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -730,7 +733,7 @@
                      </property>
                     </widget>
                    </item>
-                   <item>
+                   <item row="0" column="2">
                     <widget class="QToolButton" name="btn_netWorkTest">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -752,7 +755,7 @@
                      </property>
                     </widget>
                    </item>
-                   <item>
+                   <item row="1" column="0">
                     <widget class="QToolButton" name="btn_ports">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -774,14 +777,7 @@
                      </property>
                     </widget>
                    </item>
-                  </layout>
-                 </item>
-                 <item>
-                  <layout class="QHBoxLayout" name="tileRowNetExtra">
-                   <property name="spacing">
-                    <number>12</number>
-                   </property>
-                   <item>
+                   <item row="1" column="1">
                     <widget class="QToolButton" name="btn_hosts">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -803,7 +799,7 @@
                      </property>
                     </widget>
                    </item>
-                   <item>
+                   <item row="1" column="2">
                     <widget class="QToolButton" name="btn_dns">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -1396,6 +1392,13 @@
                      </property>
                     </widget>
                    </item>
+                  </layout>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="tileRowSysExtra">
+                   <property name="spacing">
+                    <number>12</number>
+                   </property>
                    <item>
                     <widget class="QToolButton" name="btn_sfc">
                      <property name="sizePolicy">
@@ -3495,6 +3498,9 @@
          </item>
          <item>
           <widget class="QFrame" name="logPanel">
+           <property name="visible">
+            <bool>false</bool>
+           </property>
            <property name="frameShape">
             <enum>QFrame::NoFrame</enum>
            </property>

@@ -9,7 +9,8 @@
 
 /* ---------------- 根容器 ---------------- */
 #centralwidget {
-    background: #F4F6FA;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #F6F8FC, stop:1 #EDF1F8);
 }
 
 /* ---------------- 顶栏 ---------------- */
@@ -103,7 +104,7 @@
 #cardDns, #cardMonitor, #cardShortcuts, #cardBattery, #cardDup {
     background: #FFFFFF;
     border: 1px solid #E6EAF2;
-    border-radius: 14px;
+    border-radius: 16px;
 }
 
 #cardTitleOverview, #cardTitleScore, #cardTitleRecent, #cardTitleNet, #cardTitleAdv,
@@ -132,11 +133,11 @@
 #btn_drivers, #btn_largeFiles, #btn_treedisk, #btn_prt, #btn_dup {
     background: #FFFFFF;
     border: 1px solid #E3E8F1;
-    border-radius: 12px;
+    border-radius: 14px;
     color: #1E2A3B;
     font-size: 14px;
     font-weight: 600;
-    padding: 16px 8px;
+    padding: 20px 8px;
 }
 #btn_quickHealth:hover, #btn_quickNetwork:hover, #btn_quickPorts:hover, #btn_quickDisk:hover,
 #btn_autoCheck:hover, #btn_showNetWork:hover, #btn_netWorkTest:hover, #btn_ports:hover,
@@ -170,11 +171,11 @@
 QToolButton[placeholder="true"] {
     background: #F6F7F9;
     border: 1px solid #EBEEF3;
-    border-radius: 12px;
+    border-radius: 14px;
     color: #A9B3C2;
     font-size: 14px;
     font-weight: 600;
-    padding: 16px 8px;
+    padding: 20px 8px;
 }
 QToolButton[placeholder="true"]:hover {
     background: #F2F4F8;

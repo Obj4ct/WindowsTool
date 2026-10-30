@@ -87,6 +87,7 @@ private:
     void handleAutoCheckPing();
     void handlePingTest();
     void handleDnsCheck();
+    void handleNetworkInfo();
     void runFixDns(bool askAfter);
     void askNetworkRecovered();
 
