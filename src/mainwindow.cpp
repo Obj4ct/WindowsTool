@@ -164,10 +164,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_runner, &ProcessRunner::outputReceived,
             this, [this](const QString &text) {
-                // 体检/启动项/端口/大文件/磁盘脚本只输出一行 JSON 标记，不把原始数据刷进控制台
+                // 体检/启动项/端口/大文件/磁盘/硬件脚本只输出一行 JSON 标记，不把原始数据刷进控制台
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
-                    || m_task == Task::DiskHealth)
+                    || m_task == Task::DiskHealth || m_task == Task::HwInfo)
                     return;
                 appendLog(text);
             });
@@ -265,7 +265,7 @@ void MainWindow::setupTheme()
 
     // 硬件监控
     ui->btn_diskHealth->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
-    ui->btn_hwinfo->setIcon(grayIcon(UiIcons::Icon::Monitor));
+    ui->btn_hwinfo->setIcon(tileIcon(UiIcons::Icon::Monitor));
     ui->btn_battery->setIcon(grayIcon(UiIcons::Icon::Activity));
     ui->btn_monitor->setIcon(grayIcon(UiIcons::Icon::Activity));
 
@@ -473,10 +473,6 @@ void MainWindow::setupPlaceholders()
                         "将读取最近一次崩溃的转储文件，定位可能引发蓝屏的"
                         "驱动或硬件，并给出处理建议。");
 
-    wirePlaceholderTile(ui->btn_hwinfo,
-                        "硬件信息",
-                        "将汇总 CPU、内存、显卡、主板与显示器的详细参数，"
-                        "方便确认配置或转手估值。");
     wirePlaceholderTile(ui->btn_battery,
                         "电池健康",
                         "将读取电池的设计容量与当前容量，评估损耗程度，"
@@ -638,6 +634,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::DiskHealth:
         handleDiskHealth();
+        break;
+    case Task::HwInfo:
+        handleHwInfo();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -879,6 +878,10 @@ void MainWindow::setupSystem()
     // 磁盘健康检测（只读）
     connect(ui->btn_diskHealth, &QAbstractButton::clicked,
             this, &MainWindow::runDiskHealth);
+
+    // 硬件信息快照（只读）
+    connect(ui->btn_hwinfo, &QAbstractButton::clicked,
+            this, &MainWindow::runHwInfo);
 }
 
 void MainWindow::runHealthCheck()
@@ -1431,6 +1434,7 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardStartup->setVisible(card == ui->cardStartup);
     ui->cardLargeFiles->setVisible(card == ui->cardLargeFiles);
     ui->cardDiskHealth->setVisible(card == ui->cardDiskHealth);
+    ui->cardHwinfo->setVisible(card == ui->cardHwinfo);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
@@ -1438,7 +1442,7 @@ void MainWindow::showSystemResultCard(QWidget *card)
         page = ui->pageManage;
     else if (card == ui->cardLargeFiles)
         page = ui->pageTools;
-    else if (card == ui->cardDiskHealth)
+    else if (card == ui->cardDiskHealth || card == ui->cardHwinfo)
         page = ui->pageHardware;
 
     QTimer::singleShot(0, this, [page, card] {
@@ -1762,6 +1766,274 @@ void MainWindow::addDiskRow(const QString &health, const QString &model,
     layout->addLayout(text, 1);
 
     ui->diskHealthRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 硬件信息
+
+void MainWindow::runHwInfo()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/hwinfo.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少硬件脚本",
+                    "未找到 ps1\\hwinfo.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在读取硬件信息，请稍候……");
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->hwinfoRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->hwinfoSummary->setText(QStringLiteral("正在读取……"));
+    showSystemResultCard(ui->cardHwinfo);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::HwInfo;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleHwInfo()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("HWINFO_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("读取硬件信息失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->hwinfoSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取硬件信息失败",
+                    "未能从 PowerShell 获取有效的硬件信息。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+
+    // PowerShell 序列化单个元素时可能输出对象而不是数组，统一按数组处理
+    auto toObjects = [](const QJsonValue &value) {
+        QJsonArray array;
+        if (value.isArray())
+            array = value.toArray();
+        else if (value.isObject())
+            array.append(value.toObject());
+        return array;
+    };
+
+    int count = 0;
+
+    const QJsonObject device = data.value(QStringLiteral("device")).toObject();
+    if (!device.isEmpty()) {
+        const QString model = device.value(QStringLiteral("model")).toString();
+        const QString name = device.value(QStringLiteral("name")).toString();
+        QString title = model.isEmpty() ? name : model;
+        if (title.isEmpty())
+            title = QStringLiteral("未知设备");
+
+        QStringList parts;
+        const QString maker = device.value(QStringLiteral("manufacturer")).toString();
+        if (!maker.isEmpty() && maker != title)
+            parts << maker;
+        if (!name.isEmpty() && name != title)
+            parts << name;
+
+        addHwRow("设备", title, parts.join(QStringLiteral(" · ")));
+        ++count;
+    }
+
+    for (const QJsonValue &value : toObjects(data.value(QStringLiteral("cpu")))) {
+        const QJsonObject cpu = value.toObject();
+        const QString name = cpu.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+
+        QStringList parts;
+        const int cores = cpu.value(QStringLiteral("cores")).toInt();
+        const int threads = cpu.value(QStringLiteral("threads")).toInt();
+        const int clock = cpu.value(QStringLiteral("clock")).toInt();
+        if (cores > 0)
+            parts << QStringLiteral("%1 核").arg(cores);
+        if (threads > 0)
+            parts << QStringLiteral("%1 线程").arg(threads);
+        if (clock > 0)
+            parts << QStringLiteral("%1 GHz").arg(
+                QString::number(clock / 1000.0, 'f', 2));
+        const QString socket = cpu.value(QStringLiteral("socket")).toString();
+        if (!socket.isEmpty())
+            parts << socket;
+
+        addHwRow("处理器", name, parts.join(QStringLiteral(" · ")));
+        ++count;
+    }
+
+    const QJsonObject board = data.value(QStringLiteral("board")).toObject();
+    if (!board.isEmpty()) {
+        const QString manufacturer = board.value(QStringLiteral("manufacturer")).toString();
+        const QString product = board.value(QStringLiteral("product")).toString();
+        QString title = product.isEmpty() ? manufacturer : product;
+        if (title.isEmpty())
+            title = QStringLiteral("未知主板");
+
+        QStringList parts;
+        if (!manufacturer.isEmpty() && manufacturer != title)
+            parts << manufacturer;
+
+        const QString biosVendor = board.value(QStringLiteral("bios_vendor")).toString();
+        const QString biosVersion = board.value(QStringLiteral("bios_version")).toString();
+        const QString biosDate = board.value(QStringLiteral("bios_date")).toString();
+        QString bios = QStringList{biosVendor, biosVersion}.join(QLatin1Char(' ')).trimmed();
+        if (!biosDate.isEmpty())
+            bios = bios.isEmpty() ? biosDate
+                                  : QStringLiteral("%1 (%2)").arg(bios, biosDate);
+        if (!bios.isEmpty())
+            parts << QStringLiteral("BIOS %1").arg(bios);
+
+        addHwRow("主板", title, parts.join(QStringLiteral(" · ")));
+        ++count;
+    }
+
+    const QJsonObject memory = data.value(QStringLiteral("memory")).toObject();
+    const int memTotal = memory.value(QStringLiteral("total_gb")).toInt();
+    const QJsonArray modules = toObjects(memory.value(QStringLiteral("modules")));
+    for (const QJsonValue &value : modules) {
+        const QJsonObject module = value.toObject();
+        const int capacity = module.value(QStringLiteral("capacity_gb")).toInt();
+        const int speed = module.value(QStringLiteral("speed")).toInt();
+
+        QString title = capacity > 0
+                            ? QStringLiteral("%1 GB").arg(capacity)
+                            : QStringLiteral("内存模组");
+        if (speed > 0)
+            title += QStringLiteral(" · %1 MHz").arg(speed);
+
+        QStringList parts;
+        const QString slot = module.value(QStringLiteral("slot")).toString();
+        const QString maker = module.value(QStringLiteral("manufacturer")).toString();
+        const QString part = module.value(QStringLiteral("part")).toString();
+        if (!slot.isEmpty())
+            parts << slot;
+        if (!maker.isEmpty())
+            parts << maker;
+        if (!part.isEmpty())
+            parts << part;
+
+        addHwRow("内存", title, parts.join(QStringLiteral(" · ")));
+        ++count;
+    }
+    if (modules.isEmpty() && memTotal > 0) {
+        addHwRow("内存", QStringLiteral("共 %1 GB").arg(memTotal),
+                 QStringLiteral("未读取到内存条信息"));
+        ++count;
+    }
+
+    for (const QJsonValue &value : toObjects(data.value(QStringLiteral("gpu")))) {
+        const QJsonObject gpu = value.toObject();
+        const QString name = gpu.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+
+        QStringList parts;
+        const int vramMb = gpu.value(QStringLiteral("vram_mb")).toInt();
+        if (vramMb > 0)
+            parts << (vramMb >= 1024
+                          ? QStringLiteral("显存 %1 GB").arg(
+                                QString::number(vramMb / 1024.0, 'f', 1))
+                          : QStringLiteral("显存 %1 MB").arg(vramMb));
+
+        const QString driverVersion = gpu.value(QStringLiteral("driver_version")).toString();
+        const QString driverDate = gpu.value(QStringLiteral("driver_date")).toString();
+        if (!driverVersion.isEmpty()) {
+            parts << (driverDate.isEmpty()
+                          ? QStringLiteral("驱动 %1").arg(driverVersion)
+                          : QStringLiteral("驱动 %1 (%2)").arg(driverVersion, driverDate));
+        }
+
+        const QString resolution = gpu.value(QStringLiteral("resolution")).toString();
+        if (!resolution.isEmpty())
+            parts << resolution;
+
+        addHwRow("显卡", name, parts.join(QStringLiteral(" · ")));
+        ++count;
+    }
+
+    QString summary;
+    if (count == 0) {
+        summary = QStringLiteral("未读取到硬件信息");
+    } else {
+        summary = QStringLiteral("共 %1 项硬件信息").arg(count);
+        if (memTotal > 0)
+            summary += QStringLiteral(" · 内存共 %1 GB").arg(memTotal);
+        summary += QStringLiteral("（仅读取展示，不做修改）");
+    }
+
+    ui->hwinfoSummary->setText(summary);
+    ui->hwinfoScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addHwRow(const QString &category, const QString &title,
+                          const QString &detail)
+{
+    QWidget *row = new QWidget(ui->hwinfoRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(category, row);
+    badge->setObjectName(QStringLiteral("hwBadge"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(52);
+
+    QLabel *name = new QLabel(title, row);
+    name->setObjectName(QStringLiteral("hwName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("hwDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(name);
+    text->addWidget(desc);
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->hwinfoRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具

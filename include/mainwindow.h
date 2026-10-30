@@ -46,7 +46,8 @@ private:
         StartupList,     ///< 开机启动项读取（startup.ps1）
         PortsList,       ///< 端口占用读取（ports.ps1）
         LargeFiles,      ///< 大文件扫描（largefiles.ps1）
-        DiskHealth       ///< 磁盘健康检测（diskhealth.ps1）
+        DiskHealth,      ///< 磁盘健康检测（diskhealth.ps1）
+        HwInfo           ///< 硬件信息快照（hwinfo.ps1）
     };
 
     void setupTheme();
@@ -106,6 +107,12 @@ private:
     void handleDiskHealth();
     void addDiskRow(const QString &health, const QString &model,
                     const QString &detail);
+
+    // 硬件信息快照
+    void runHwInfo();
+    void handleHwInfo();
+    void addHwRow(const QString &category, const QString &title,
+                  const QString &detail);
 
     /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
     void showSystemResultCard(QWidget *card);
