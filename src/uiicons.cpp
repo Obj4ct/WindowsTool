@@ -230,6 +230,15 @@ void drawIcon(QPainter &p, Icon icon, const QColor &color)
         p.drawLine(QPointF(6.8, 13.0), QPointF(10.8, 13.0));
         break;
     }
+    case Icon::DiskPulse: {
+        // 盘体
+        p.drawPath(roundedRect(2.6, 7.0, 18.8, 10.0, 2.4));
+        // 盘内的健康脉搏
+        p.drawPath(polyline({QPointF(5.4, 12.0), QPointF(8.6, 12.0),
+                             QPointF(10.4, 9.6), QPointF(12.6, 14.4),
+                             QPointF(14.4, 12.0), QPointF(18.6, 12.0)}));
+        break;
+    }
     case Icon::Camera: {
         p.drawLine(QPointF(6.0, 2.6), QPointF(6.0, 6.6));
         p.drawLine(QPointF(6.0, 2.6), QPointF(10.0, 2.6));

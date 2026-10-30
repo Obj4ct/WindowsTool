@@ -685,7 +685,7 @@
                 <item>
                  <widget class="QLabel" name="cardHintSys">
                   <property name="text">
-                   <string>一键体检系统状态、查看开机启动项，清理临时文件、扫描大文件、修复桌面图标显示异常</string>
+                   <string>一键体检系统状态、查看开机启动项，清理临时文件、扫描大文件、检测磁盘健康、修复桌面图标显示异常</string>
                   </property>
                  </widget>
                 </item>
@@ -801,6 +801,28 @@
                     </property>
                     <property name="text">
                      <string>大文件扫描</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QToolButton" name="btn_diskHealth">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                      <horstretch>1</horstretch>
+                      <verstretch>0</verstretch>
+                     </sizepolicy>
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>0</width>
+                      <height>92</height>
+                     </size>
+                    </property>
+                    <property name="toolButtonStyle">
+                     <enum>Qt::ToolButtonTextUnderIcon</enum>
+                    </property>
+                    <property name="text">
+                     <string>磁盘健康</string>
                     </property>
                    </widget>
                   </item>
@@ -1028,6 +1050,94 @@
                   </property>
                   <widget class="QWidget" name="largeFilesRows">
                    <layout class="QVBoxLayout" name="largeFilesRowsLayout">
+                    <property name="spacing">
+                     <number>8</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="bottomMargin">
+                     <number>0</number>
+                    </property>
+                   </layout>
+                  </widget>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
+             <item>
+              <widget class="QFrame" name="cardDiskHealth">
+               <property name="visible">
+                <bool>false</bool>
+               </property>
+               <property name="frameShape">
+                <enum>QFrame::NoFrame</enum>
+               </property>
+               <layout class="QVBoxLayout" name="diskHealthLayout">
+                <property name="spacing">
+                 <number>8</number>
+                </property>
+                <property name="leftMargin">
+                 <number>18</number>
+                </property>
+                <property name="topMargin">
+                 <number>14</number>
+                </property>
+                <property name="rightMargin">
+                 <number>18</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>14</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="diskHealthTitle">
+                  <property name="text">
+                   <string>磁盘健康</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="diskHealthSummary">
+                  <property name="text">
+                   <string>正在读取……</string>
+                  </property>
+                  <property name="wordWrap">
+                   <bool>true</bool>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QScrollArea" name="diskHealthScroll">
+                  <property name="minimumSize">
+                   <size>
+                    <width>0</width>
+                    <height>235</height>
+                   </size>
+                  </property>
+                  <property name="maximumSize">
+                   <size>
+                    <width>16777215</width>
+                    <height>235</height>
+                   </size>
+                  </property>
+                  <property name="frameShape">
+                   <enum>QFrame::NoFrame</enum>
+                  </property>
+                  <property name="horizontalScrollBarPolicy">
+                   <enum>Qt::ScrollBarAlwaysOff</enum>
+                  </property>
+                  <property name="widgetResizable">
+                   <bool>true</bool>
+                  </property>
+                  <widget class="QWidget" name="diskHealthRows">
+                   <layout class="QVBoxLayout" name="diskHealthRowsLayout">
                     <property name="spacing">
                      <number>8</number>
                     </property>

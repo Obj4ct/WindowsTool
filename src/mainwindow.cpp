@@ -99,6 +99,37 @@ QString startupSourceLabel(const QString &code)
     return QStringLiteral("当前用户");
 }
 
+/** 磁盘介质类型（ps1 输出英文枚举）→ 中文标签 */
+QString diskMediaLabel(const QString &code)
+{
+    if (code == QLatin1String("HDD"))
+        return QStringLiteral("机械硬盘");
+    if (code == QLatin1String("SSD"))
+        return QStringLiteral("固态硬盘");
+    if (code == QLatin1String("SCM"))
+        return QStringLiteral("存储级内存");
+    return QStringLiteral("未知介质");
+}
+
+/** 磁盘健康状态（ps1 输出英文枚举）→ 中文标签 + 徽章配色代号 */
+QString diskHealthLabel(const QString &code, QString *state)
+{
+    if (code == QLatin1String("Healthy")) {
+        *state = QStringLiteral("ok");
+        return QStringLiteral("健康");
+    }
+    if (code == QLatin1String("Warning")) {
+        *state = QStringLiteral("warn");
+        return QStringLiteral("警告");
+    }
+    if (code == QLatin1String("Unhealthy")) {
+        *state = QStringLiteral("bad");
+        return QStringLiteral("异常");
+    }
+    *state = QStringLiteral("warn");
+    return QStringLiteral("未知");
+}
+
 /** 把样式表文件读入并应用到整个应用 */
 bool applyStyleSheet(QApplication &app)
 {
@@ -130,9 +161,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_runner, &ProcessRunner::outputReceived,
             this, [this](const QString &text) {
-                // 体检/启动项/端口/大文件脚本只输出一行 JSON 标记，不把原始数据刷进控制台
+                // 体检/启动项/端口/大文件/磁盘脚本只输出一行 JSON 标记，不把原始数据刷进控制台
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
-                    || m_task == Task::PortsList || m_task == Task::LargeFiles)
+                    || m_task == Task::PortsList || m_task == Task::LargeFiles
+                    || m_task == Task::DiskHealth)
                     return;
                 appendLog(text);
             });
@@ -205,13 +237,14 @@ void MainWindow::setupTheme()
     ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
     ui->btn_startup->setIcon(tileIcon(UiIcons::Icon::Rocket));
     ui->btn_largeFiles->setIcon(tileIcon(UiIcons::Icon::Disk));
+    ui->btn_diskHealth->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
     for (QToolButton *b : {ui->btn_autoCheck, ui->btn_showNetWork,
                             ui->btn_netWorkTest, ui->btn_ports,
                             ui->btn_cleaner, ui->btn_fixWhite,
                             ui->btn_healthCheck, ui->btn_startup,
-                            ui->btn_largeFiles}) {
+                            ui->btn_largeFiles, ui->btn_diskHealth}) {
         b->setIconSize(QSize(30, 30));
     }
 
@@ -425,6 +458,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::LargeFiles:
         handleLargeFileScan();
+        break;
+    case Task::DiskHealth:
+        handleDiskHealth();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -662,6 +698,10 @@ void MainWindow::setupSystem()
     // 大文件扫描（只读）
     connect(ui->btn_largeFiles, &QAbstractButton::clicked,
             this, &MainWindow::runLargeFileScan);
+
+    // 磁盘健康检测（只读）
+    connect(ui->btn_diskHealth, &QAbstractButton::clicked,
+            this, &MainWindow::runDiskHealth);
 }
 
 void MainWindow::runHealthCheck()
@@ -1213,6 +1253,7 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardHealth->setVisible(card == ui->cardHealth);
     ui->cardStartup->setVisible(card == ui->cardStartup);
     ui->cardLargeFiles->setVisible(card == ui->cardLargeFiles);
+    ui->cardDiskHealth->setVisible(card == ui->cardDiskHealth);
 
     // 系统页是可滚动的，结果显示后把对应卡片滚入视野
     QTimer::singleShot(0, this, [this, card] {
@@ -1362,6 +1403,180 @@ void MainWindow::addLargeFileRow(const QString &size, const QString &name,
     layout->addLayout(text, 1);
 
     ui->largeFilesRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 磁盘健康
+
+void MainWindow::runDiskHealth()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/diskhealth.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少磁盘脚本",
+                    "未找到 ps1\\diskhealth.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在读取磁盘健康信息，请稍候……");
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->diskHealthRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->diskHealthSummary->setText(QStringLiteral("正在读取……"));
+    showSystemResultCard(ui->cardDiskHealth);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::DiskHealth;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleDiskHealth()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("DISKS_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError) {
+        appendLog("-------------------");
+        appendLog("读取磁盘健康失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->diskHealthSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取磁盘健康失败",
+                    "未能从 PowerShell 获取有效的磁盘信息。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    // 只有一块磁盘时 PowerShell 可能输出单个对象而不是数组
+    QJsonArray items;
+    if (document.isArray())
+        items = document.array();
+    else if (document.isObject())
+        items.append(document.object());
+
+    int total = 0;
+    int bad = 0;
+    for (const QJsonValue &value : items) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject object = value.toObject();
+        const QString model = object.value(QStringLiteral("model")).toString();
+        if (model.isEmpty())
+            continue;
+
+        QString state;
+        const QString health = diskHealthLabel(
+            object.value(QStringLiteral("health")).toString(), &state);
+        if (state != QLatin1String("ok"))
+            ++bad;
+
+        QStringList parts;
+        parts << diskMediaLabel(object.value(QStringLiteral("media")).toString());
+        const QString bus = object.value(QStringLiteral("bus")).toString();
+        if (!bus.isEmpty())
+            parts << bus;
+        parts << formatFileSize(static_cast<qint64>(
+            object.value(QStringLiteral("size")).toDouble()));
+
+        // 可靠性计数器需要管理员权限，普通权限下为 null
+        const QJsonValue temp = object.value(QStringLiteral("temperature"));
+        const QJsonValue wear = object.value(QStringLiteral("wear"));
+        const QJsonValue hours = object.value(QStringLiteral("hours"));
+        if (!temp.isNull() && !temp.isUndefined())
+            parts << QStringLiteral("温度 %1℃").arg(temp.toInt());
+        if (!wear.isNull() && !wear.isUndefined())
+            parts << QStringLiteral("磨损 %1%").arg(wear.toInt());
+        if (!hours.isNull() && !hours.isUndefined())
+            parts << QStringLiteral("通电 %1 小时").arg(
+                static_cast<qint64>(hours.toDouble()));
+
+        QString detail = parts.join(QStringLiteral(" · "));
+        if (temp.isNull() && wear.isNull() && hours.isNull())
+            detail += QStringLiteral(" · 温度/磨损等详细数据需管理员权限");
+
+        addDiskRow(health, model, detail);
+        ++total;
+    }
+
+    QString summary;
+    if (total == 0)
+        summary = QStringLiteral("未发现物理磁盘");
+    else if (bad > 0)
+        summary = QStringLiteral("共 %1 块磁盘 · %2 块存在异常，建议尽快备份重要数据")
+                      .arg(total).arg(bad);
+    else
+        summary = QStringLiteral("共 %1 块磁盘 · 状态正常（仅展示，不做修复）").arg(total);
+
+    ui->diskHealthSummary->setText(summary);
+    ui->diskHealthScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addDiskRow(const QString &health, const QString &model,
+                            const QString &detail)
+{
+    QWidget *row = new QWidget(ui->diskHealthRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(health, row);
+    badge->setObjectName(QStringLiteral("diskBadge"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(48);
+    // 供 style.qss 按状态配色（ok / warn / bad）
+    badge->setProperty("state",
+                       health == QStringLiteral("健康") ? QStringLiteral("ok")
+                       : health == QStringLiteral("异常") ? QStringLiteral("bad")
+                                                          : QStringLiteral("warn"));
+
+    QLabel *title = new QLabel(model, row);
+    title->setObjectName(QStringLiteral("diskName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("diskDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->diskHealthRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具

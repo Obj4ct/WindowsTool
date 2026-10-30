@@ -33,6 +33,7 @@ enum class Icon {
     Health,      ///< 电脑体检（心形 + 脉搏）
     Rocket,      ///< 开机启动（火箭）
     Disk,        ///< 大文件扫描（磁盘）
+    DiskPulse,   ///< 磁盘健康（磁盘 + 脉搏）
     Camera,      ///< 截图（裁切框）
     Keyboard,    ///< 快捷键
     Dots,        ///< 更多（三点）
