@@ -244,6 +244,7 @@ MainWindow::MainWindow(QWidget *parent)
                 // 体检/启动项/端口/大文件/磁盘/硬件脚本只输出一行 JSON 标记，不把原始数据刷进控制台
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
+                    || m_task == Task::DuplicateScan || m_task == Task::DuplicateDelete
                     || m_task == Task::DiskHealth || m_task == Task::HwInfo
                     || m_task == Task::Battery
                     || m_task == Task::ProcessList || m_task == Task::DiskUsage
@@ -361,7 +362,7 @@ void MainWindow::setupTheme()
     // 实用工具
     ui->btn_largeFiles->setIcon(tileIcon(UiIcons::Icon::Disk));
     ui->btn_treedisk->setIcon(tileIcon(UiIcons::Icon::Picture));
-    ui->btn_dup->setIcon(grayIcon(UiIcons::Icon::Grid));
+    ui->btn_dup->setIcon(tileIcon(UiIcons::Icon::Grid));
     ui->btn_hash->setIcon(grayIcon(UiIcons::Icon::Link));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
@@ -556,9 +557,6 @@ void MainWindow::setupPlaceholders()
                         "将读取最近一次崩溃的转储文件，定位可能引发蓝屏的"
                         "驱动或硬件，并给出处理建议。");
 
-    wirePlaceholderTile(ui->btn_dup,
-                        "重复文件",
-                        "将按文件内容找出重复文件，确认后安全释放磁盘空间。");
     wirePlaceholderTile(ui->btn_hash,
                         "文件哈希",
                         "将计算文件的 MD5 / SHA1 / SHA256，"
@@ -712,6 +710,12 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::LargeFiles:
         handleLargeFileScan();
+        break;
+    case Task::DuplicateScan:
+        handleDuplicateScan();
+        break;
+    case Task::DuplicateDelete:
+        handleDuplicateDelete();
         break;
     case Task::DiskHealth:
         handleDiskHealth();
@@ -985,6 +989,12 @@ void MainWindow::setupSystem()
     // 大文件扫描（只读）
     connect(ui->btn_largeFiles, &QAbstractButton::clicked,
             this, &MainWindow::runLargeFileScan);
+
+    // 重复文件扫描与清理
+    connect(ui->btn_dup, &QAbstractButton::clicked,
+            this, &MainWindow::runDuplicateScan);
+    connect(ui->dupDeleteBtn, &QAbstractButton::clicked,
+            this, &MainWindow::runDuplicateDelete);
 
     // 磁盘健康检测（只读）
     connect(ui->btn_diskHealth, &QAbstractButton::clicked,
@@ -1603,13 +1613,15 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardUninstall->setVisible(card == ui->cardUninstall);
     ui->cardDrivers->setVisible(card == ui->cardDrivers);
     ui->cardBattery->setVisible(card == ui->cardBattery);
+    ui->cardDup->setVisible(card == ui->cardDup);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
     if (card == ui->cardStartup || card == ui->cardProcesses
         || card == ui->cardUninstall || card == ui->cardDrivers)
         page = ui->pageManage;
-    else if (card == ui->cardLargeFiles || card == ui->cardDiskUsage)
+    else if (card == ui->cardLargeFiles || card == ui->cardDiskUsage
+             || card == ui->cardDup)
         page = ui->pageTools;
     else if (card == ui->cardDiskHealth || card == ui->cardHwinfo
              || card == ui->cardBattery)
@@ -1762,6 +1774,317 @@ void MainWindow::addLargeFileRow(const QString &size, const QString &name,
     layout->addLayout(text, 1);
 
     ui->largeFilesRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 重复文件
+
+void MainWindow::runDuplicateScan()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/duplicates.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少扫描脚本",
+                    "未找到 ps1\\duplicates.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    const QString root = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("选择要扫描的目录"), QDir::homePath());
+    if (root.isEmpty())
+        return;
+
+    runDuplicateScanFor(root);
+}
+
+void MainWindow::runDuplicateScanFor(const QString &root)
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/duplicates.ps1"));
+
+    ++m_flow;
+
+    clearLog();
+    appendLog(QStringLiteral("正在扫描 %1 中的重复文件，目录越大耗时越久，请稍候……")
+                  .arg(QDir::toNativeSeparators(root)));
+
+    while (QLayoutItem *item = ui->dupRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    // 末尾留一个弹簧，避免只有少量分组时行被拉伸得过高
+    ui->dupRowsLayout->addStretch(1);
+
+    m_dupRoot = root;
+    m_dupShown = 0;
+    m_dupFiles = 0;
+    m_dupBytes = 0;
+
+    ui->dupDeleteBtn->setEnabled(false);
+    ui->dupSummary->setText(QStringLiteral("正在扫描……"));
+    showSystemResultCard(ui->cardDup);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Root"), QDir::toNativeSeparators(root),
+        QStringLiteral("-Top"), QStringLiteral("20")
+    };
+
+    m_task = Task::DuplicateScan;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleDuplicateScan()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("DUPLICATES_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("扫描重复文件失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->dupSummary->setText(QStringLiteral("扫描失败"));
+        ui->dupDeleteBtn->setEnabled(false);
+        showMessage("扫描重复文件失败",
+                    "未能从 PowerShell 获取有效的扫描结果。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或更换目录后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+
+    if (data.value(QStringLiteral("error")).toString()
+        == QLatin1String("no-root")) {
+        ui->dupSummary->setText(QStringLiteral("目录不存在或无法访问"));
+        ui->dupDeleteBtn->setEnabled(false);
+        showMessage("无法扫描该目录",
+                    "所选目录不存在或无法访问，请重新选择。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QString root = data.value(QStringLiteral("root")).toString();
+    if (!root.isEmpty())
+        m_dupRoot = root;
+
+    const int scanned = data.value(QStringLiteral("scanned")).toInt();
+    const int groups = data.value(QStringLiteral("groups")).toInt();
+    const int shown = data.value(QStringLiteral("shown")).toInt();
+    const int dupFiles = data.value(QStringLiteral("dupFiles")).toInt();
+    const qint64 wasted = static_cast<qint64>(
+        data.value(QStringLiteral("wasted")).toDouble());
+
+    m_dupShown = shown;
+    m_dupFiles = dupFiles;
+    m_dupBytes = wasted;
+
+    const QJsonArray items = data.value(QStringLiteral("items")).toArray();
+    for (const QJsonValue &value : items) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject object = value.toObject();
+
+        const QString name = object.value(QStringLiteral("name")).toString();
+        const int count = object.value(QStringLiteral("count")).toInt();
+        const qint64 groupWasted = static_cast<qint64>(
+            object.value(QStringLiteral("wasted")).toDouble());
+
+        QStringList paths;
+        for (const QJsonValue &pathValue : object.value(QStringLiteral("paths")).toArray()) {
+            const QString path = pathValue.toString();
+            if (!path.isEmpty())
+                paths.append(QDir::toNativeSeparators(path));
+        }
+
+        const QString detail = QStringLiteral("共 %1 份 · 可释放 %2\n%3")
+                                   .arg(count)
+                                   .arg(formatFileSize(groupWasted))
+                                   .arg(paths.join(QStringLiteral("\n")));
+        addDupRow(formatFileSize(groupWasted), name, detail);
+    }
+
+    QString summary;
+    if (groups == 0) {
+        summary = QStringLiteral("未发现重复文件（已扫描 %1 个不小于 1 KB 的文件）")
+                      .arg(scanned);
+    } else {
+        summary = QStringLiteral("扫描 %1 个文件 · 共 %2 组重复 · %3 个多余副本 · "
+                                 "可释放 %4")
+                      .arg(scanned)
+                      .arg(groups)
+                      .arg(dupFiles)
+                      .arg(formatFileSize(wasted));
+        if (groups > shown)
+            summary += QStringLiteral("（仅列出占用最大的 %1 组）").arg(shown);
+        summary += QStringLiteral(" · 删除时每组保留创建最早的一份");
+    }
+
+    ui->dupSummary->setText(summary);
+    ui->dupDeleteBtn->setEnabled(shown > 0);
+    ui->dupScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::runDuplicateDelete()
+{
+    if (m_dupRoot.isEmpty() || m_dupShown <= 0)
+        return;
+
+    const QString confirmText =
+        QStringLiteral("将删除 %1 中前 %2 组重复文件的额外副本（每组保留创建时间最早的一份），"
+                       "共 %3 个副本，可释放约 %4。\n\n"
+                       "删除后文件无法恢复，请确认。")
+            .arg(QDir::toNativeSeparators(m_dupRoot))
+            .arg(m_dupShown)
+            .arg(m_dupFiles)
+            .arg(formatFileSize(m_dupBytes));
+
+    if (!confirmAction(QStringLiteral("确认删除重复副本"), confirmText,
+                       QMessageBox::Warning))
+        return;
+
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/duplicates.ps1"));
+
+    ++m_flow;
+
+    clearLog();
+    appendLog(QStringLiteral("正在删除重复副本，请稍候……"));
+
+    ui->dupDeleteBtn->setEnabled(false);
+    ui->dupSummary->setText(QStringLiteral("正在删除重复副本……"));
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), QStringLiteral("delete"),
+        QStringLiteral("-Root"), QDir::toNativeSeparators(m_dupRoot),
+        QStringLiteral("-Top"), QString::number(m_dupShown)
+    };
+
+    m_task = Task::DuplicateDelete;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleDuplicateDelete()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("DUPLICATES_ACTION_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+
+    int deleted = 0;
+    int failed = 0;
+    qint64 freed = 0;
+
+    if (!payload.isEmpty() && parseError.error == QJsonParseError::NoError
+        && document.isObject()) {
+        const QJsonObject data = document.object();
+        deleted = data.value(QStringLiteral("deleted")).toInt();
+        failed = data.value(QStringLiteral("failed")).toInt();
+        freed = static_cast<qint64>(data.value(QStringLiteral("freed")).toDouble());
+    } else {
+        appendLog("-------------------");
+        appendLog("删除重复副本失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->dupSummary->setText(QStringLiteral("删除失败，正在重新扫描……"));
+        showMessage("删除重复副本失败",
+                    "未能从 PowerShell 获取有效的删除结果，正在重新扫描当前目录。",
+                    QMessageBox::Warning);
+        const QString root = m_dupRoot;
+        QTimer::singleShot(0, this, [this, root] { runDuplicateScanFor(root); });
+        return;
+    }
+
+    QString message = QStringLiteral("已删除 %1 个重复副本，释放约 %2。")
+                          .arg(deleted)
+                          .arg(formatFileSize(freed));
+    if (failed > 0)
+        message += QStringLiteral("\n\n有 %1 个文件无法删除（可能被占用或没有权限）。")
+                       .arg(failed);
+
+    appendLog("-------------------");
+    appendLog(message);
+    ui->dupSummary->setText(message.section(QLatin1Char('\n'), 0, 0));
+    showMessage(failed > 0 ? QStringLiteral("部分文件未能删除")
+                           : QStringLiteral("删除完成"),
+                message,
+                failed > 0 ? QMessageBox::Warning : QMessageBox::Information);
+
+    // 重新扫描同一目录，让清单反映最新状态。
+    // 必须延后到下一轮事件循环：本函数由 onTaskFinished 调用，它返回后会把
+    // m_task 重置为 None，若此时新扫描已在跑，输出就会被当成普通日志刷进
+    // 控制台，且扫描结束时也不会有对应的处理函数。
+    const QString root = m_dupRoot;
+    QTimer::singleShot(0, this, [this, root] { runDuplicateScanFor(root); });
+}
+
+void MainWindow::addDupRow(const QString &badge, const QString &name,
+                           const QString &detail)
+{
+    QWidget *row = new QWidget(ui->dupRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badgeLabel = new QLabel(badge, row);
+    badgeLabel->setObjectName(QStringLiteral("dupBadge"));
+    badgeLabel->setAlignment(Qt::AlignCenter);
+    badgeLabel->setFixedWidth(64);
+
+    QLabel *title = new QLabel(name, row);
+    title->setObjectName(QStringLiteral("dupName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("dupDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badgeLabel, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    const int insertAt = qMax(0, ui->dupRowsLayout->count() - 1);
+    ui->dupRowsLayout->insertWidget(insertAt, row);
 }
 
 // ---------------------------------------------------------------- 磁盘健康

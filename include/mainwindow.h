@@ -47,6 +47,8 @@ private:
         StartupList,     ///< 开机启动项读取（startup.ps1）
         PortsList,       ///< 端口占用读取（ports.ps1）
         LargeFiles,      ///< 大文件扫描（largefiles.ps1）
+        DuplicateScan,   ///< 重复文件扫描（duplicates.ps1 scan）
+        DuplicateDelete, ///< 删除重复副本（duplicates.ps1 delete）
         DiskHealth,      ///< 磁盘健康检测（diskhealth.ps1）
         HwInfo,          ///< 硬件信息快照（hwinfo.ps1）
         Battery,         ///< 电池健康（battery.ps1）
@@ -112,6 +114,15 @@ private:
     void handleLargeFileScan();
     void addLargeFileRow(const QString &size, const QString &name,
                          const QString &path);
+
+    // 重复文件扫描与清理
+    void runDuplicateScan();
+    void runDuplicateScanFor(const QString &root);
+    void handleDuplicateScan();
+    void runDuplicateDelete();
+    void handleDuplicateDelete();
+    void addDupRow(const QString &badge, const QString &name,
+                   const QString &detail);
 
     // 磁盘健康检测
     void runDiskHealth();
@@ -182,6 +193,12 @@ private:
 
     /** 当前默认路由网卡的显示名，DNS 切换时用于提示 */
     QString m_dnsAlias;
+
+    /** 重复文件扫描：扫描目录与已展示的分组数，删除时按同样的分组顺序处理 */
+    QString m_dupRoot;
+    int m_dupShown = 0;
+    int m_dupFiles = 0;
+    qint64 m_dupBytes = 0;
 
     /** CPU/内存/磁盘/网络实时采样器 */
     SysMonitor *m_monitor = nullptr;
