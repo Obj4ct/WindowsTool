@@ -11,6 +11,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QJsonArray>
@@ -71,6 +72,21 @@ QString formatUptime(qint64 seconds)
     return QStringLiteral("%1 分钟").arg(minutes);
 }
 
+/** 字节数 → "1.2 GB" / "345 MB" / "12 KB" */
+QString formatFileSize(qint64 bytes)
+{
+    if (bytes >= 1024LL * 1024 * 1024)
+        return QStringLiteral("%1 GB").arg(
+            QString::number(static_cast<double>(bytes) / (1024.0 * 1024 * 1024), 'f', 2));
+    if (bytes >= 1024LL * 1024)
+        return QStringLiteral("%1 MB").arg(
+            QString::number(static_cast<double>(bytes) / (1024.0 * 1024), 'f', 1));
+    if (bytes >= 1024)
+        return QStringLiteral("%1 KB").arg(
+            QString::number(static_cast<double>(bytes) / 1024.0, 'f', 0));
+    return QStringLiteral("%1 B").arg(bytes);
+}
+
 /** 启动项来源代码（ps1 输出英文，避免脚本编码问题）→ 中文标签 */
 QString startupSourceLabel(const QString &code)
 {
@@ -114,9 +130,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_runner, &ProcessRunner::outputReceived,
             this, [this](const QString &text) {
-                // 体检/启动项/端口脚本只输出一行 JSON 标记，不把原始数据刷进控制台
+                // 体检/启动项/端口/大文件脚本只输出一行 JSON 标记，不把原始数据刷进控制台
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
-                    || m_task == Task::PortsList)
+                    || m_task == Task::PortsList || m_task == Task::LargeFiles)
                     return;
                 appendLog(text);
             });
@@ -188,12 +204,14 @@ void MainWindow::setupTheme()
     ui->btn_fixWhite->setIcon(tileIcon(UiIcons::Icon::Picture));
     ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
     ui->btn_startup->setIcon(tileIcon(UiIcons::Icon::Rocket));
+    ui->btn_largeFiles->setIcon(tileIcon(UiIcons::Icon::Disk));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
     for (QToolButton *b : {ui->btn_autoCheck, ui->btn_showNetWork,
                             ui->btn_netWorkTest, ui->btn_ports,
                             ui->btn_cleaner, ui->btn_fixWhite,
-                            ui->btn_healthCheck, ui->btn_startup}) {
+                            ui->btn_healthCheck, ui->btn_startup,
+                            ui->btn_largeFiles}) {
         b->setIconSize(QSize(30, 30));
     }
 
@@ -404,6 +422,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::PortsList:
         handlePortsList();
+        break;
+    case Task::LargeFiles:
+        handleLargeFileScan();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -637,6 +658,10 @@ void MainWindow::setupSystem()
     // 开机启动项（只读）
     connect(ui->btn_startup, &QAbstractButton::clicked,
             this, &MainWindow::runStartupList);
+
+    // 大文件扫描（只读）
+    connect(ui->btn_largeFiles, &QAbstractButton::clicked,
+            this, &MainWindow::runLargeFileScan);
 }
 
 void MainWindow::runHealthCheck()
@@ -667,13 +692,7 @@ void MainWindow::runHealthCheck()
     ui->healthSummary->setProperty("state", QString());
     ui->healthSummary->style()->unpolish(ui->healthSummary);
     ui->healthSummary->style()->polish(ui->healthSummary);
-    ui->cardStartup->setVisible(false);   // 两个结果卡片同时只显示一个
-    ui->cardHealth->setVisible(true);
-
-    // 系统页是可滚动的，结果显示后把对应卡片滚入视野
-    QTimer::singleShot(0, this, [this] {
-        ui->pageSystem->ensureWidgetVisible(ui->cardHealth);
-    });
+    showSystemResultCard(ui->cardHealth);
 
     // 直接用 PowerShell 的 exe + 参数列表启动，不再把整条命令行交给 cmd.exe。
     // 整串命令行里的双引号会先被 cmd.exe 解析、再被 QProcess 做参数转义，
@@ -920,13 +939,7 @@ void MainWindow::runStartupList()
         delete item;
     }
     ui->startupSummary->setText(QStringLiteral("正在读取……"));
-    ui->cardHealth->setVisible(false);    // 两个结果卡片同时只显示一个
-    ui->cardStartup->setVisible(true);
-
-    // 系统页是可滚动的，结果显示后把对应卡片滚入视野
-    QTimer::singleShot(0, this, [this] {
-        ui->pageSystem->ensureWidgetVisible(ui->cardStartup);
-    });
+    showSystemResultCard(ui->cardStartup);
 
     const QStringList args = {
         QStringLiteral("-NoProfile"),
@@ -1191,6 +1204,164 @@ void MainWindow::addPortRow(const QString &protocol, const QString &address,
     layout->addLayout(text, 1);
 
     ui->portsRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 大文件扫描
+
+void MainWindow::showSystemResultCard(QWidget *card)
+{
+    ui->cardHealth->setVisible(card == ui->cardHealth);
+    ui->cardStartup->setVisible(card == ui->cardStartup);
+    ui->cardLargeFiles->setVisible(card == ui->cardLargeFiles);
+
+    // 系统页是可滚动的，结果显示后把对应卡片滚入视野
+    QTimer::singleShot(0, this, [this, card] {
+        ui->pageSystem->ensureWidgetVisible(card);
+    });
+}
+
+void MainWindow::runLargeFileScan()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/largefiles.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少扫描脚本",
+                    "未找到 ps1\\largefiles.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    // 让用户选择扫描范围；取消则不执行
+    const QString root = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("选择要扫描的目录"), QDir::homePath());
+    if (root.isEmpty())
+        return;
+
+    ++m_flow;
+
+    clearLog();
+    appendLog(QStringLiteral("正在扫描 %1，目录越大耗时越久，请稍候……")
+                  .arg(QDir::toNativeSeparators(root)));
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->largeFilesRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->largeFilesSummary->setText(QStringLiteral("正在扫描……"));
+    showSystemResultCard(ui->cardLargeFiles);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Root"), QDir::toNativeSeparators(root)
+    };
+
+    m_task = Task::LargeFiles;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleLargeFileScan()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("LARGEFILES_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError) {
+        appendLog("-------------------");
+        appendLog("扫描大文件失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->largeFilesSummary->setText(QStringLiteral("扫描失败"));
+        showMessage("扫描大文件失败",
+                    "未能从 PowerShell 获取有效的扫描结果。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或更换目录后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    // 只有一项时 PowerShell 可能输出单个对象而不是数组
+    QJsonArray items;
+    if (document.isArray())
+        items = document.array();
+    else if (document.isObject())
+        items.append(document.object());
+
+    int total = 0;
+    for (const QJsonValue &value : items) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject object = value.toObject();
+        const QString name = object.value(QStringLiteral("name")).toString();
+        const QString path = object.value(QStringLiteral("path")).toString();
+        if (name.isEmpty() && path.isEmpty())
+            continue;
+
+        const qint64 size = static_cast<qint64>(
+            object.value(QStringLiteral("size")).toDouble());
+        addLargeFileRow(formatFileSize(size), name, path);
+        ++total;
+    }
+
+    QString summary;
+    if (total == 0)
+        summary = QStringLiteral("未发现大文件");
+    else
+        summary = QStringLiteral("共 %1 个大文件（体积 Top 50） · 仅展示，暂不支持删除").arg(total);
+
+    ui->largeFilesSummary->setText(summary);
+    ui->largeFilesScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addLargeFileRow(const QString &size, const QString &name,
+                                 const QString &path)
+{
+    QWidget *row = new QWidget(ui->largeFilesRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(size, row);
+    badge->setObjectName(QStringLiteral("largeFileSize"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(72);
+
+    QLabel *title = new QLabel(name.isEmpty() ? QStringLiteral("(未命名)") : name, row);
+    title->setObjectName(QStringLiteral("largeFileName"));
+
+    QLabel *desc = new QLabel(path, row);
+    desc->setObjectName(QStringLiteral("largeFilePath"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->largeFilesRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具

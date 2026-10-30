@@ -43,7 +43,8 @@ private:
         FixWhite,        ///< 重建桌面图标缓存
         HealthCheck,     ///< 系统体检（healthcheck.ps1）
         StartupList,     ///< 开机启动项读取（startup.ps1）
-        PortsList        ///< 端口占用读取（ports.ps1）
+        PortsList,       ///< 端口占用读取（ports.ps1）
+        LargeFiles       ///< 大文件扫描（largefiles.ps1）
     };
 
     void setupTheme();
@@ -82,6 +83,15 @@ private:
     void addPortRow(const QString &protocol, const QString &address,
                     const QString &port, const QString &pid,
                     const QString &process, const QString &state);
+
+    // 大文件扫描
+    void runLargeFileScan();
+    void handleLargeFileScan();
+    void addLargeFileRow(const QString &size, const QString &name,
+                         const QString &path);
+
+    /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
+    void showSystemResultCard(QWidget *card);
 
     // 工具方法
     void appendLog(const QString &text);

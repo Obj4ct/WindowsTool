@@ -218,6 +218,18 @@ void drawIcon(QPainter &p, Icon icon, const QColor &color)
         p.drawPath(polyline({QPointF(10.4, 15.4), QPointF(12.0, 20.8), QPointF(13.6, 15.4)}));
         break;
     }
+    case Icon::Disk: {
+        // 盘体
+        p.drawRoundedRect(QRectF(3.0, 6.0, 18.0, 12.0), 3.0, 3.0);
+        // 读写指示灯
+        p.setBrush(color);
+        p.drawEllipse(QPointF(17.2, 14.6), 1.3, 1.3);
+        p.setBrush(Qt::NoBrush);
+        // 数据线
+        p.drawLine(QPointF(6.8, 10.2), QPointF(13.2, 10.2));
+        p.drawLine(QPointF(6.8, 13.0), QPointF(10.8, 13.0));
+        break;
+    }
     case Icon::Camera: {
         p.drawLine(QPointF(6.0, 2.6), QPointF(6.0, 6.6));
         p.drawLine(QPointF(6.0, 2.6), QPointF(10.0, 2.6));
