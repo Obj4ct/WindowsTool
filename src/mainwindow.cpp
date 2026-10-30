@@ -114,8 +114,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_runner, &ProcessRunner::outputReceived,
             this, [this](const QString &text) {
-                // 体检/启动项脚本只输出一行 JSON 标记，不把原始数据刷进控制台
-                if (m_task == Task::HealthCheck || m_task == Task::StartupList)
+                // 体检/启动项/端口脚本只输出一行 JSON 标记，不把原始数据刷进控制台
+                if (m_task == Task::HealthCheck || m_task == Task::StartupList
+                    || m_task == Task::PortsList)
                     return;
                 appendLog(text);
             });
@@ -182,6 +183,7 @@ void MainWindow::setupTheme()
     ui->btn_autoCheck->setIcon(tileIcon(UiIcons::Icon::ShieldCheck));
     ui->btn_showNetWork->setIcon(tileIcon(UiIcons::Icon::Info));
     ui->btn_netWorkTest->setIcon(tileIcon(UiIcons::Icon::Activity));
+    ui->btn_ports->setIcon(tileIcon(UiIcons::Icon::Link));
     ui->btn_cleaner->setIcon(tileIcon(UiIcons::Icon::Clean));
     ui->btn_fixWhite->setIcon(tileIcon(UiIcons::Icon::Picture));
     ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
@@ -189,9 +191,9 @@ void MainWindow::setupTheme()
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
     for (QToolButton *b : {ui->btn_autoCheck, ui->btn_showNetWork,
-                            ui->btn_netWorkTest, ui->btn_cleaner,
-                            ui->btn_fixWhite, ui->btn_healthCheck,
-                            ui->btn_startup}) {
+                            ui->btn_netWorkTest, ui->btn_ports,
+                            ui->btn_cleaner, ui->btn_fixWhite,
+                            ui->btn_healthCheck, ui->btn_startup}) {
         b->setIconSize(QSize(30, 30));
     }
 
@@ -351,6 +353,10 @@ void MainWindow::setupNetwork()
         m_task = Task::PingTest;
         m_runner->runCommand(QStringLiteral("ping www.baidu.com"));
     });
+
+    // 端口占用查询（只读）
+    connect(ui->btn_ports, &QAbstractButton::clicked,
+            this, &MainWindow::runPortsList);
 }
 
 /**
@@ -395,6 +401,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::StartupList:
         handleStartupList();
+        break;
+    case Task::PortsList:
+        handlePortsList();
         break;
     case Task::NetInfo:
         appendLog("-------------------");
@@ -1025,6 +1034,163 @@ void MainWindow::addStartupRow(const QString &source, const QString &name,
     layout->addLayout(text, 1);
 
     ui->startupRowsLayout->addWidget(row);
+}
+
+// ---------------------------------------------------------------- 端口占用
+
+void MainWindow::runPortsList()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/ports.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少端口脚本",
+                    "未找到 ps1\\ports.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在读取端口占用，请稍候……");
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->portsRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->portsSummary->setText(QStringLiteral("正在读取……"));
+    ui->cardPorts->setVisible(true);
+
+    // 网络页是可滚动的，结果显示后把卡片滚入视野
+    QTimer::singleShot(0, this, [this] {
+        ui->pageNetwork->ensureWidgetVisible(ui->cardPorts);
+    });
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::PortsList;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handlePortsList()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("PORTS_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError) {
+        appendLog("-------------------");
+        appendLog("读取端口失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->portsSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取端口失败",
+                    "未能从 PowerShell 获取有效的端口列表。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    // 只有一项时 PowerShell 可能输出单个对象而不是数组
+    QJsonArray items;
+    if (document.isArray())
+        items = document.array();
+    else if (document.isObject())
+        items.append(document.object());
+
+    int total = 0;
+    for (const QJsonValue &value : items) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject object = value.toObject();
+        const int port = object.value(QStringLiteral("port")).toInt();
+        if (port <= 0)
+            continue;
+
+        addPortRow(object.value(QStringLiteral("protocol")).toString(),
+                   object.value(QStringLiteral("address")).toString(),
+                   QString::number(port),
+                   QString::number(object.value(QStringLiteral("pid")).toInt()),
+                   object.value(QStringLiteral("process")).toString(),
+                   object.value(QStringLiteral("state")).toString());
+        ++total;
+    }
+
+    QString summary;
+    if (total == 0)
+        summary = QStringLiteral("未发现监听端口");
+    else
+        summary = QStringLiteral("共 %1 个监听端口 · 仅展示，暂不支持结束进程").arg(total);
+
+    ui->portsSummary->setText(summary);
+    ui->portsScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addPortRow(const QString &protocol, const QString &address,
+                            const QString &port, const QString &pid,
+                            const QString &process, const QString &state)
+{
+    QWidget *row = new QWidget(ui->portsRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(protocol.isEmpty() ? QStringLiteral("—") : protocol, row);
+    badge->setObjectName(QStringLiteral("portBadge"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(52);
+
+    QString titleText = QStringLiteral("端口 %1").arg(port);
+    if (!process.isEmpty())
+        titleText += QStringLiteral(" · %1").arg(process);
+
+    QLabel *title = new QLabel(titleText, row);
+    title->setObjectName(QStringLiteral("portName"));
+
+    QStringList detail;
+    if (!address.isEmpty())
+        detail << address;
+    detail << QStringLiteral("PID %1").arg(pid);
+    if (!state.isEmpty())
+        detail << state;
+
+    QLabel *desc = new QLabel(detail.join(QStringLiteral(" · ")), row);
+    desc->setObjectName(QStringLiteral("portDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->portsRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具

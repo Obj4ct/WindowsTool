@@ -86,18 +86,18 @@
 }
 
 /* ---------------- 内容卡片 ---------------- */
-#pageSystem, #pageSystemInner {
+#pageSystem, #pageSystemInner, #pageNetwork, #pageNetworkInner {
     background: transparent;
     border: none;
 }
 
-#cardNetwork, #cardAdvanced, #cardSystem, #cardHealth, #cardStartup, #cardShortcuts {
+#cardNetwork, #cardAdvanced, #cardSystem, #cardHealth, #cardStartup, #cardPorts, #cardShortcuts {
     background: #FFFFFF;
     border: 1px solid #E6EAF2;
     border-radius: 14px;
 }
 
-#cardTitleNet, #cardTitleAdv, #cardTitleSys, #healthTitle, #startupTitle, #cardTitleTool {
+#cardTitleNet, #cardTitleAdv, #cardTitleSys, #healthTitle, #startupTitle, #portsTitle, #cardTitleTool {
     color: #1B2637;
     font-size: 15px;
     font-weight: 600;
@@ -109,7 +109,7 @@
 }
 
 /* ---------------- 功能磁贴 ---------------- */
-#btn_autoCheck, #btn_showNetWork, #btn_netWorkTest,
+#btn_autoCheck, #btn_showNetWork, #btn_netWorkTest, #btn_ports,
 #btn_cleaner, #btn_fixWhite, #btn_healthCheck, #btn_startup, #btn_prt {
     background: #FFFFFF;
     border: 1px solid #E3E8F1;
@@ -119,18 +119,18 @@
     font-weight: 600;
     padding: 16px 8px;
 }
-#btn_autoCheck:hover, #btn_showNetWork:hover, #btn_netWorkTest:hover,
+#btn_autoCheck:hover, #btn_showNetWork:hover, #btn_netWorkTest:hover, #btn_ports:hover,
 #btn_cleaner:hover, #btn_fixWhite:hover, #btn_healthCheck:hover, #btn_startup:hover, #btn_prt:hover {
     background: #FAFCFF;
     border-color: #AEC7F4;
     color: #1A5FD0;
 }
-#btn_autoCheck:pressed, #btn_showNetWork:pressed, #btn_netWorkTest:pressed,
+#btn_autoCheck:pressed, #btn_showNetWork:pressed, #btn_netWorkTest:pressed, #btn_ports:pressed,
 #btn_cleaner:pressed, #btn_fixWhite:pressed, #btn_healthCheck:pressed, #btn_startup:pressed, #btn_prt:pressed {
     background: #EFF4FD;
     border-color: #8FB4EE;
 }
-#btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_netWorkTest:disabled,
+#btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_netWorkTest:disabled, #btn_ports:disabled,
 #btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled, #btn_startup:disabled, #btn_prt:disabled {
     background: #F7F8FA;
     border-color: #EAEEF4;
@@ -228,6 +228,38 @@
 }
 
 #startupCommand {
+    color: #7A879B;
+    font-size: 12px;
+}
+
+/* ---------------- 端口占用 ---------------- */
+#portsSummary {
+    color: #4A576F;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#portsScroll, #portsRows {
+    background: transparent;
+    border: none;
+}
+
+#portBadge {
+    background: #EEF3FB;
+    border-radius: 8px;
+    color: #3A66B0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 6px;
+}
+
+#portName {
+    color: #1E2A3B;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#portDetail {
     color: #7A879B;
     font-size: 12px;
 }

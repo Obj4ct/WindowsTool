@@ -42,7 +42,8 @@ private:
         WinsockReset,    ///< 重置 Winsock
         FixWhite,        ///< 重建桌面图标缓存
         HealthCheck,     ///< 系统体检（healthcheck.ps1）
-        StartupList      ///< 开机启动项读取（startup.ps1）
+        StartupList,     ///< 开机启动项读取（startup.ps1）
+        PortsList        ///< 端口占用读取（ports.ps1）
     };
 
     void setupTheme();
@@ -74,6 +75,13 @@ private:
     void handleStartupList();
     void addStartupRow(const QString &source, const QString &name,
                        const QString &command);
+
+    // 端口占用
+    void runPortsList();
+    void handlePortsList();
+    void addPortRow(const QString &protocol, const QString &address,
+                    const QString &port, const QString &pid,
+                    const QString &process, const QString &state);
 
     // 工具方法
     void appendLog(const QString &text);
