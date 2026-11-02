@@ -865,6 +865,22 @@
     font-size: 13px;
     font-weight: 600;
 }
+#bgTaskStatus {
+    color: #6C7A90;
+    font-size: 12px;
+}
+#bgViewBtn {
+    background: #FFFFFF;
+    border: 1px solid #C8D8EE;
+    border-radius: 7px;
+    color: #2F6FDE;
+    font-size: 12px;
+    padding: 4px 12px;
+}
+#bgViewBtn:hover {
+    background: #EEF4FF;
+    border-color: #9DB9E8;
+}
 #bgCancelBtn {
     background: #FFFFFF;
     border: 1px solid #E1E7F0;

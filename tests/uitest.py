@@ -551,6 +551,33 @@ def uia_exists_name(pid, name_text):
     return "FOUND" in r.stdout
 
 
+def uia_exists_name_contains(pid, fragment):
+    """按可见文本的片段判断是否存在（用于带动态数值的汇总行）"""
+    import base64
+    b64 = base64.b64encode(fragment.encode("utf-8")).decode("ascii")
+    script = (
+        "Add-Type -AssemblyName UIAutomationClient;"
+        "Add-Type -AssemblyName UIAutomationTypes;"
+        "$name=[Text.Encoding]::UTF8.GetString("
+        "[Convert]::FromBase64String('" + b64 + "'));"
+        "$r=[System.Windows.Automation.AutomationElement]::RootElement;"
+        "$pc=New-Object System.Windows.Automation.PropertyCondition("
+        "[System.Windows.Automation.AutomationElement]::ProcessIdProperty,"
+        + str(pid) + ");"
+        "$wins=$r.FindAll([System.Windows.Automation.TreeScope]::Children,$pc);"
+        "foreach($w in $wins){"
+        "$els=$w.FindAll([System.Windows.Automation.TreeScope]::Descendants,"
+        "[System.Windows.Automation.Condition]::TrueCondition);"
+        "foreach($e in $els){"
+        "if($e.Current.Name -like ('*'+$name+'*')){"
+        "Write-Output 'FOUND';exit 0 } } };"
+        "Write-Output 'MISS'"
+    )
+    r = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                       capture_output=True, text=True, timeout=40)
+    return "FOUND" in r.stdout
+
+
 def test_task_concurrency(exe, shot_dir):
     """测试4：长任务运行中再点另一个功能 → 询问框 → 后台任务窗口 → 取消"""
     print("\n[测试4] 任务并发：询问 / 后台任务 / 取消")
@@ -617,6 +644,73 @@ def test_task_concurrency(exe, shot_dir):
                 proc.kill()
 
 
+def test_background_result(exe, shot_dir):
+    """测试5：后台任务跑完后，可从后台窗口「查看结果」把输出渲染回卡片"""
+    print("\n[测试5] 后台任务结果回收")
+    proc = subprocess.Popen([exe], cwd=os.path.dirname(exe))
+    try:
+        hwnd = find_app_window(proc)
+        if not hwnd:
+            check("启动并显示主窗口", False, "未找到窗口")
+            return
+        time.sleep(2)
+
+        switched, _ = uia_click(proc.pid, "navToolsBtn")
+        check("切到实用工具页", switched)
+        time.sleep(0.5)
+        started, detail = uia_click(proc.pid, "btn_treemap")
+        check("启动 C 盘空间图（稍后转入后台）", started, detail)
+        time.sleep(1.0)
+
+        uia_click(proc.pid, "navNetworkBtn")
+        time.sleep(0.4)
+        uia_click_async(proc.pid, "btn_ports")
+        time.sleep(1.0)
+
+        dlg = find_window(PROMPT_TITLE, timeout=8, pid=proc.pid)
+        check("弹出「终止 / 后台运行」询问框", dlg is not None)
+        if dlg:
+            press_enter(dlg)  # 默认按钮 = 放到后台并继续
+            time.sleep(1.0)
+            check("日志栏出现「后台任务 1」入口",
+                  uia_exists_name(proc.pid, "后台任务 1"))
+
+            # 等后台的 C 盘扫描结束（大目录可能要几十秒）
+            ready = False
+            deadline = time.time() + 150
+            while time.time() < deadline:
+                if uia_exists_name(proc.pid, "查看结果"):
+                    ready = True
+                    break
+                time.sleep(4)
+            check("后台任务完成后出现「查看结果」", ready)
+
+            if ready:
+                bg = find_window(BG_TITLE, timeout=5, pid=proc.pid)
+                if bg:
+                    shot = os.path.join(shot_dir, "uitest_bg_result.png")
+                    if capture(bg, shot):
+                        check("保存后台结果窗口截图", True, shot)
+
+                clicked, detail = uia_click_name(proc.pid, "查看结果")
+                check("点击「查看结果」", clicked, detail)
+                time.sleep(1.5)
+                check("结果已渲染回卡片（出现树图汇总）",
+                      uia_exists_name_contains(proc.pid, "个文件夹"),
+                      "未找到汇总行")
+                check("查看后后台任务入口消失",
+                      not uia_exists(proc.pid, "bgTaskButton"))
+
+        check("进程未崩溃", proc.poll() is None, f"exit={proc.poll()}")
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=8)
+            except Exception:
+                proc.kill()
+
+
 def main():
     if len(sys.argv) < 2:
         print("用法: python uitest.py <exe路径>")
@@ -635,6 +729,7 @@ def main():
     test_close_while_running(exe)
     test_task_switch(exe)
     test_task_concurrency(exe, shot_dir)
+    test_background_result(exe, shot_dir)
 
     print(f"\n===== 结果: {passed} passed, {failed} failed =====")
     return 0 if failed == 0 else 1

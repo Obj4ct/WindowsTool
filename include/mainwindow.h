@@ -319,6 +319,10 @@ private:
     struct BackgroundTask {
         ProcessRunner *runner = nullptr;
         QString label;
+        Task task = Task::None;   ///< 原任务类型，用于把结果渲染回对应卡片
+        bool done = false;        ///< 进程已结束
+        int exitCode = 0;
+        QString result;           ///< 「已完成」/「失败：…」
     };
     QList<BackgroundTask> m_background;
 
@@ -355,10 +359,20 @@ private:
     QString currentTaskLabel() const;
     void abortForegroundTask();
     void moveForegroundToBackground();
-    void finishBackgroundTask(ProcessRunner *runner, const QString &result);
+    void finishBackgroundTask(ProcessRunner *runner, const QString &result,
+                              int exitCode = -1, bool hasResult = false);
     void showBackgroundTasks();
     void refreshBackgroundDialog();
     void updateBackgroundEntry();
+
+    /** 把任务结束时的结果分发到对应处理函数（前台与"查看后台结果"共用） */
+    void dispatchTaskFinished(int exitCode);
+    /** 已结束的后台任务，其结果能否渲染回界面（只读类任务返回 true） */
+    bool backgroundResultViewable(Task task) const;
+    /** 某任务的结果显示在哪个页面，无对应页面返回 -1 */
+    int pageForTask(Task task) const;
+    /** 「查看结果」：临时把后台任务的输出交给原处理函数渲染 */
+    void viewBackgroundResult(ProcessRunner *runner);
 
     Ui::MainWindow *ui;
     ProcessRunner *m_runner;

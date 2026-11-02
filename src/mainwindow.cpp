@@ -781,8 +781,12 @@ void MainWindow::setupNetwork()
  */
 void MainWindow::onTaskFinished(int exitCode)
 {
-    Q_UNUSED(exitCode);
+    dispatchTaskFinished(exitCode);
+    m_task = Task::None;
+}
 
+void MainWindow::dispatchTaskFinished(int exitCode)
+{
     switch (m_task) {
     case Task::PingAutoCheck:
         handleAutoCheckPing();
@@ -911,8 +915,6 @@ void MainWindow::onTaskFinished(int exitCode)
     case Task::None:
         break;
     }
-
-    m_task = Task::None;
 }
 
 void MainWindow::onTaskFailed(const QString &reason)
@@ -6348,15 +6350,18 @@ void MainWindow::moveForegroundToBackground()
     if (!runner)
         return;
 
-    BackgroundTask task;
-    task.runner = runner;
-    task.label = currentTaskLabel();
-    m_background.append(task);
+    BackgroundTask entry;
+    entry.runner = runner;
+    entry.label = currentTaskLabel();
+    entry.task = m_task;
+    m_background.append(entry);
+    const Task type = entry.task;
 
-    // 后台任务只关心"结束"这件事，结果不再写回界面
+    // 后台任务只关心"结束"这件事；结果留在这个执行器里，稍后可从后台窗口查看
     disconnect(runner, nullptr, this, nullptr);
-    connect(runner, &ProcessRunner::finished, this, [this, runner](int) {
-        finishBackgroundTask(runner, QStringLiteral("已完成"));
+    connect(runner, &ProcessRunner::finished, this, [this, runner, type](int code) {
+        finishBackgroundTask(runner, QStringLiteral("已完成"), code,
+                             backgroundResultViewable(type));
     });
     connect(runner, &ProcessRunner::failed, this, [this, runner](const QString &reason) {
         finishBackgroundTask(runner, QStringLiteral("失败：%1").arg(reason));
@@ -6372,35 +6377,44 @@ void MainWindow::moveForegroundToBackground()
         m_sfcTimer->stop();
     setSfcRunning(false);
     m_restoreBusy = false;
-    m_sxsLogPath.clear();
     ui->restoreCreateBtn->setEnabled(true);
     ui->btnWUpdateFix->setEnabled(true);
 
     m_task = Task::None;
 
-    appendLog(QStringLiteral("「%1」已转到后台继续运行。").arg(task.label));
+    appendLog(QStringLiteral("「%1」已转到后台继续运行。").arg(entry.label));
     updateBackgroundEntry();
     showBackgroundTasks();
 }
 
-void MainWindow::finishBackgroundTask(ProcessRunner *runner, const QString &result)
+void MainWindow::finishBackgroundTask(ProcessRunner *runner, const QString &result,
+                                      int exitCode, bool hasResult)
 {
-    QString label;
-    bool found = false;
+    int index = -1;
     for (int i = 0; i < m_background.size(); ++i) {
         if (m_background.at(i).runner == runner) {
-            label = m_background.at(i).label;
-            m_background.removeAt(i);
-            found = true;
+            index = i;
             break;
         }
     }
 
-    if (found)
-        appendLog(QStringLiteral("后台任务「%1」%2。").arg(label, result));
+    QString label;
+    if (index >= 0) {
+        label = m_background.at(index).label;
+        if (hasResult) {
+            // 结果留在列表里等用户查看，执行器暂不销毁（输出还在里面）
+            m_background[index].done = true;
+            m_background[index].exitCode = exitCode;
+            m_background[index].result = result;
+        } else {
+            m_background.removeAt(index);
+            if (runner)
+                runner->deleteLater();
+        }
+    }
 
-    if (runner)
-        runner->deleteLater();
+    if (!label.isEmpty())
+        appendLog(QStringLiteral("后台任务「%1」%2。").arg(label, result));
 
     updateBackgroundEntry();
     refreshBackgroundDialog();
@@ -6408,11 +6422,141 @@ void MainWindow::finishBackgroundTask(ProcessRunner *runner, const QString &resu
 
 void MainWindow::updateBackgroundEntry()
 {
+    int ready = 0;
+    for (const BackgroundTask &task : m_background) {
+        if (task.done)
+            ++ready;
+    }
+
     const int count = m_background.size();
     ui->bgTaskButton->setVisible(count > 0);
-    ui->bgTaskButton->setText(
-        count > 0 ? QStringLiteral("后台任务 %1").arg(count)
-                  : QStringLiteral("后台任务"));
+
+    QString text = QStringLiteral("后台任务 %1").arg(count);
+    if (ready > 0)
+        text += QStringLiteral(" · %1 个有结果").arg(ready);
+    ui->bgTaskButton->setText(count > 0 ? text : QStringLiteral("后台任务"));
+}
+
+bool MainWindow::backgroundResultViewable(Task task) const
+{
+    // 只读任务的结果都渲染在卡片里，可以把输出重放回界面；
+    // 写操作（改配置、卸载、删文件）不重放，避免重复触发副作用
+    switch (task) {
+    case Task::HealthCheck:
+    case Task::StartupList:
+    case Task::PortsList:
+    case Task::LargeFiles:
+    case Task::DuplicateScan:
+    case Task::DiskHealth:
+    case Task::HwInfo:
+    case Task::Battery:
+    case Task::ProcessList:
+    case Task::DiskUsage:
+    case Task::UninstallList:
+    case Task::DriverList:
+    case Task::HostsRead:
+    case Task::DnsRead:
+    case Task::FileLock:
+    case Task::BootTime:
+    case Task::ContextMenuList:
+    case Task::Treemap:
+    case Task::RestoreList:
+    case Task::SfcRepair:
+    case Task::SxsCleanup:
+    case Task::WUpdateRepair:
+    case Task::NetInfo:
+        return true;
+    default:
+        return false;
+    }
+}
+
+int MainWindow::pageForTask(Task task) const
+{
+    switch (task) {
+    case Task::PingAutoCheck:
+    case Task::DnsCheck:
+    case Task::FixDnsAuto:
+    case Task::FixDnsManual:
+    case Task::NetInfo:
+    case Task::PortsList:
+    case Task::HostsRead:
+    case Task::DnsRead:
+        return 1;
+    case Task::Cleaner:
+    case Task::WinsockReset:
+    case Task::FixWhite:
+    case Task::HealthCheck:
+    case Task::SfcRepair:
+    case Task::WUpdateRepair:
+    case Task::SxsCleanup:
+    case Task::RestoreList:
+    case Task::RestoreCreate:
+        return 2;
+    case Task::DiskHealth:
+    case Task::HwInfo:
+    case Task::Battery:
+        return 3;
+    case Task::StartupList:
+    case Task::ProcessList:
+    case Task::UninstallList:
+    case Task::DriverList:
+        return 4;
+    case Task::LargeFiles:
+    case Task::DuplicateScan:
+    case Task::DiskUsage:
+    case Task::FileLock:
+    case Task::BootTime:
+    case Task::ContextMenuList:
+    case Task::Treemap:
+        return 5;
+    default:
+        return -1;
+    }
+}
+
+void MainWindow::viewBackgroundResult(ProcessRunner *runner)
+{
+    int index = -1;
+    for (int i = 0; i < m_background.size(); ++i) {
+        if (m_background.at(i).runner == runner) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0)
+        return;
+
+    if (m_task != Task::None) {
+        showMessage(QStringLiteral("还有任务正在运行"),
+                    QStringLiteral("等「%1」结束，或把它转到后台后再查看这条结果。")
+                        .arg(currentTaskLabel()));
+        return;
+    }
+
+    const BackgroundTask entry = m_background.at(index);
+    m_background.removeAt(index);
+
+    // 临时把后台执行器当作当前执行器，处理函数读的就是它的输出
+    ProcessRunner *idleRunner = m_runner;
+    m_runner = entry.runner;
+    m_task = entry.task;
+    dispatchTaskFinished(entry.exitCode);
+    m_task = Task::None;
+    m_runner = idleRunner;
+
+    entry.runner->deleteLater();
+
+    const int page = pageForTask(entry.task);
+    if (page >= 0)
+        showPage(page);
+
+    if (m_bgDialog)
+        m_bgDialog->hide();
+
+    appendLog(QStringLiteral("已显示后台任务「%1」的结果。").arg(entry.label));
+    updateBackgroundEntry();
+    refreshBackgroundDialog();
 }
 
 void MainWindow::showBackgroundTasks()
@@ -6436,8 +6580,9 @@ void MainWindow::refreshBackgroundDialog()
         outer->setSpacing(10);
 
         QLabel *hint = new QLabel(
-            QStringLiteral("这些任务仍在后台运行，可以随时取消。"
-                           "关闭这个窗口不会影响它们。"), m_bgDialog);
+            QStringLiteral("这些任务在后台运行，可以随时取消。"
+                           "已经跑完的任务可以查看结果。关闭这个窗口不会影响它们。"),
+            m_bgDialog);
         hint->setObjectName(QStringLiteral("bgHint"));
         hint->setWordWrap(true);
         outer->addWidget(hint);
@@ -6480,18 +6625,33 @@ void MainWindow::refreshBackgroundDialog()
         QLabel *name = new QLabel(task.label, row);
         name->setObjectName(QStringLiteral("bgTaskName"));
 
-        QPushButton *cancelButton = new QPushButton(QStringLiteral("取消"), row);
-        cancelButton->setObjectName(QStringLiteral("bgCancelBtn"));
-        cancelButton->setCursor(Qt::PointingHandCursor);
-
-        ProcessRunner *runner = task.runner;
-        connect(cancelButton, &QPushButton::clicked, this, [this, runner]() {
-            runner->stop();
-            finishBackgroundTask(runner, QStringLiteral("已取消"));
-        });
+        QLabel *status = new QLabel(task.done ? task.result
+                                              : QStringLiteral("正在运行"), row);
+        status->setObjectName(QStringLiteral("bgTaskStatus"));
 
         layout->addWidget(name, 1);
-        layout->addWidget(cancelButton);
+        layout->addWidget(status);
+
+        ProcessRunner *runner = task.runner;
+        if (task.done) {
+            QPushButton *viewButton = new QPushButton(QStringLiteral("查看结果"), row);
+            viewButton->setObjectName(QStringLiteral("bgViewBtn"));
+            viewButton->setCursor(Qt::PointingHandCursor);
+            connect(viewButton, &QPushButton::clicked, this, [this, runner]() {
+                viewBackgroundResult(runner);
+            });
+            layout->addWidget(viewButton);
+        } else {
+            QPushButton *cancelButton = new QPushButton(QStringLiteral("取消"), row);
+            cancelButton->setObjectName(QStringLiteral("bgCancelBtn"));
+            cancelButton->setCursor(Qt::PointingHandCursor);
+            connect(cancelButton, &QPushButton::clicked, this, [this, runner]() {
+                runner->stop();
+                finishBackgroundTask(runner, QStringLiteral("已取消"));
+            });
+            layout->addWidget(cancelButton);
+        }
+
         m_bgRowsLayout->addWidget(row);
     }
 }
