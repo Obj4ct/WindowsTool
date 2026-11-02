@@ -24,11 +24,13 @@ set(APP_SOURCES
     src/mainwindow.cpp
     src/processrunner.cpp
     src/sysmonitor.cpp
+    src/treemapwidget.cpp
     src/uiicons.cpp
     include/mainwindow.h
     include/processrunner.h
     include/netcheck.h
     include/sysmonitor.h
+    include/treemapwidget.h
     include/uiicons.h
     src/mainwindow.ui
     resources/ico.qrc

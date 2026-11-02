@@ -3,6 +3,7 @@
 #include "processrunner.h"
 #include "netcheck.h"
 #include "sysmonitor.h"
+#include "treemapwidget.h"
 #include "uiicons.h"
 
 #include <QAbstractButton>
@@ -29,6 +30,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPixmap>
+#include <QProcess>
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QStyle>
@@ -286,7 +288,7 @@ bool applyStyleSheet(QApplication &app)
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
-    , m_runner(new ProcessRunner(this))
+    , m_runner(nullptr)
 {
     ui->setupUi(this);
 
@@ -300,7 +302,16 @@ MainWindow::MainWindow(QWidget *parent)
     setupSystem();
     setupTools();
 
-    connect(m_runner, &ProcessRunner::outputReceived,
+    // 每次任务可能换用新的 ProcessRunner（后台运行的旧任务仍持有旧的），
+    // 连接逻辑集中在这里，避免每处都重复接线
+    m_runner = createRunner();
+}
+
+ProcessRunner *MainWindow::createRunner()
+{
+    ProcessRunner *runner = new ProcessRunner(this);
+
+    connect(runner, &ProcessRunner::outputReceived,
             this, [this](const QString &text) {
                 // 体检/启动项/端口/大文件/磁盘/硬件脚本只输出一行 JSON 标记，不把原始数据刷进控制台
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
@@ -317,15 +328,39 @@ MainWindow::MainWindow(QWidget *parent)
                     || m_task == Task::ContextMenuList
                     || m_task == Task::ContextMenuToggle
                     || m_task == Task::StartupToggle
+                    || m_task == Task::Treemap
+                    || m_task == Task::SxsCleanup
+                    || m_task == Task::RestoreList
+                    || m_task == Task::RestoreCreate
                     || m_task == Task::SfcRepair
                     || m_task == Task::WUpdateRepair)
                     return;
                 appendLog(text);
             });
-    connect(m_runner, &ProcessRunner::finished,
+    connect(runner, &ProcessRunner::finished,
             this, &MainWindow::onTaskFinished);
-    connect(m_runner, &ProcessRunner::failed,
+    connect(runner, &ProcessRunner::failed,
             this, &MainWindow::onTaskFailed);
+
+    // 「处理过程」面板的显隐跟随当前执行器：终止/转入后台的旧任务不再
+    // 影响面板，新任务启动后重新计时
+    connect(runner, &ProcessRunner::started, this, [this]() {
+        m_busyIdle->stop();
+        if (!m_busyShown)
+            m_busyDelay->start();
+    });
+
+    const auto taskOver = [this]() {
+        m_busyDelay->stop();
+        if (m_busyShown)
+            m_busyIdle->start();
+    };
+    connect(runner, &ProcessRunner::finished, this,
+            [taskOver](int) { taskOver(); });
+    connect(runner, &ProcessRunner::failed, this,
+            [taskOver](const QString &) { taskOver(); });
+
+    return runner;
 }
 
 MainWindow::~MainWindow()
@@ -343,6 +378,15 @@ MainWindow::~MainWindow()
         disconnect(m_runner, nullptr, this, nullptr);
         m_runner->stop();
     }
+
+    // 后台任务的执行器同样可能在销毁时同步回调，一并断开并终止
+    for (const BackgroundTask &task : m_background) {
+        if (!task.runner)
+            continue;
+        disconnect(task.runner, nullptr, this, nullptr);
+        task.runner->stop();
+    }
+    m_background.clear();
 
     delete ui;
 }
@@ -407,6 +451,8 @@ void MainWindow::setupTheme()
     ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
     ui->btn_sfc->setIcon(tileIcon(UiIcons::Icon::ShieldCheck));
     ui->btn_wupdate->setIcon(tileIcon(UiIcons::Icon::Refresh));
+    ui->btn_sxsClean->setIcon(tileIcon(UiIcons::Icon::Clean));
+    ui->btn_restore->setIcon(tileIcon(UiIcons::Icon::Reset));
 
     // 硬件监控
     ui->btn_diskHealth->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
@@ -427,6 +473,7 @@ void MainWindow::setupTheme()
     ui->btn_contextMenu->setIcon(tileIcon(UiIcons::Icon::Dots));
     ui->btn_bootTime->setIcon(tileIcon(UiIcons::Icon::Rocket));
     ui->btn_fileLock->setIcon(tileIcon(UiIcons::Icon::Link));
+    ui->btn_treemap->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
     for (QToolButton *b : {ui->btn_quickHealth, ui->btn_quickNetwork,
@@ -437,13 +484,15 @@ void MainWindow::setupTheme()
                             ui->btn_cleaner, ui->btn_fixWhite,
                             ui->btn_healthCheck, ui->btn_sfc,
                             ui->btn_wupdate,
+                            ui->btn_sxsClean, ui->btn_restore,
                             ui->btn_diskHealth, ui->btn_hwinfo,
                             ui->btn_battery, ui->btn_monitor,
                             ui->btn_startup, ui->btn_process,
                             ui->btn_uninstall, ui->btn_drivers,
                             ui->btn_largeFiles, ui->btn_treedisk,
                             ui->btn_dup, ui->btn_contextMenu,
-                            ui->btn_bootTime, ui->btn_fileLock}) {
+                            ui->btn_bootTime, ui->btn_fileLock,
+                            ui->btn_treemap}) {
         b->setIconSize(QSize(30, 30));
     }
 
@@ -469,6 +518,10 @@ void MainWindow::setupTheme()
     connect(ui->clearLogButton, &QPushButton::clicked,
             this, &MainWindow::clearLog);
 
+    // 后台任务入口（没有后台任务时隐藏）
+    connect(ui->bgTaskButton, &QPushButton::clicked,
+            this, &MainWindow::showBackgroundTasks);
+
     // ------------------------------------------------- 耗时任务的提示
     // 命令开始后先等 350ms 再弹出底部「处理过程」面板：太快结束的命令
     // （如读取 DNS）不会闪一下；仍然在跑的命令则给出明确的等待提示。
@@ -483,22 +536,6 @@ void MainWindow::setupTheme()
 
     connect(m_busyDelay, &QTimer::timeout, this, &MainWindow::showBusyHint);
     connect(m_busyIdle, &QTimer::timeout, this, &MainWindow::hideBusyHint);
-
-    connect(m_runner, &ProcessRunner::started, this, [this]() {
-        m_busyIdle->stop();
-        if (!m_busyShown)
-            m_busyDelay->start();
-    });
-
-    const auto taskOver = [this]() {
-        m_busyDelay->stop();
-        if (m_busyShown)
-            m_busyIdle->start();
-    };
-    connect(m_runner, &ProcessRunner::finished, this,
-            [taskOver](int) { taskOver(); });
-    connect(m_runner, &ProcessRunner::failed, this,
-            [taskOver](const QString &) { taskOver(); });
 }
 
 // ---------------------------------------------------------------- 关于
@@ -850,6 +887,18 @@ void MainWindow::onTaskFinished(int exitCode)
     case Task::StartupToggle:
         handleStartupToggle();
         break;
+    case Task::Treemap:
+        handleTreemap();
+        break;
+    case Task::SxsCleanup:
+        handleSxsCleanup(exitCode);
+        break;
+    case Task::RestoreList:
+        handleRestorePointList();
+        break;
+    case Task::RestoreCreate:
+        handleRestorePointCreate();
+        break;
     case Task::SfcRepair:
         handleSfcRepair(exitCode);
         break;
@@ -889,6 +938,41 @@ void MainWindow::onTaskFailed(const QString &reason)
         ui->wupdateSummary->style()->polish(ui->wupdateSummary);
     }
 
+    if (m_task == Task::SxsCleanup) {
+        ui->btnWUpdateFix->setEnabled(true);
+        ui->wupdateSummary->setText(
+            QStringLiteral("清理未能启动或异常中断：%1").arg(reason));
+        ui->wupdateSummary->setProperty("state", QStringLiteral("risk"));
+        ui->wupdateSummary->style()->unpolish(ui->wupdateSummary);
+        ui->wupdateSummary->style()->polish(ui->wupdateSummary);
+        m_sxsLogPath.clear();
+    }
+
+    if (m_task == Task::RestoreList) {
+        ui->restoreSummary->setText(
+            QStringLiteral("读取还原点失败：%1").arg(reason));
+        ui->restoreSummary->setProperty("state", QStringLiteral("risk"));
+        ui->restoreSummary->style()->unpolish(ui->restoreSummary);
+        ui->restoreSummary->style()->polish(ui->restoreSummary);
+    }
+
+    if (m_task == Task::RestoreCreate) {
+        m_restoreBusy = false;
+        ui->restoreCreateBtn->setEnabled(true);
+        ui->restoreSummary->setText(
+            QStringLiteral("创建还原点失败：%1").arg(reason));
+        ui->restoreSummary->setProperty("state", QStringLiteral("risk"));
+        ui->restoreSummary->style()->unpolish(ui->restoreSummary);
+        ui->restoreSummary->style()->polish(ui->restoreSummary);
+    }
+
+    if (m_task == Task::Treemap) {
+        ui->treemapSummary->setText(
+            QStringLiteral("统计失败：%1").arg(reason));
+        if (m_treemap)
+            m_treemap->showPlaceholder(QStringLiteral("统计失败，请重试"));
+    }
+
     appendLog("-------------------");
     appendLog(QStringLiteral("执行失败：%1").arg(reason));
     showMessage("操作执行失败", reason, QMessageBox::Critical);
@@ -902,6 +986,9 @@ void MainWindow::onTaskFailed(const QString &reason)
  */
 void MainWindow::startAutoCheck()
 {
+    if (!claimTask(QStringLiteral("一键自动检测")))
+        return;
+
     ++m_flow;
 
     clearLog();
@@ -996,6 +1083,9 @@ void MainWindow::runFixDns(bool askAfter)
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("刷新网络配置")))
+        return;
 
     appendLog("-------------------");
     appendLog("正在刷新网络配置，请稍候……");
@@ -1162,6 +1252,39 @@ void MainWindow::setupSystem()
     connect(ui->btnWUpdateFix, &QPushButton::clicked,
             this, &MainWindow::runWUpdateFix);
 
+    // 清理 Windows 更新组件（DISM StartComponentCleanup）
+    connect(ui->btn_sxsClean, &QAbstractButton::clicked,
+            this, &MainWindow::runSxsCleanup);
+
+    // 系统还原点：点磁贴展开卡片并读取列表
+    ui->restoreRowsLayout->setAlignment(Qt::AlignTop);
+    connect(ui->btn_restore, &QAbstractButton::clicked, this, [this]() {
+        if (m_task == Task::RestoreList || m_task == Task::RestoreCreate) {
+            showSystemResultCard(ui->cardRestore);
+            return;
+        }
+        runRestorePointList();
+    });
+    connect(ui->restoreCreateBtn, &QPushButton::clicked,
+            this, &MainWindow::runRestorePointCreate);
+    connect(ui->restoreOpenBtn, &QPushButton::clicked, this, [this]() {
+        if (!confirmAction(
+                "打开系统还原",
+                QStringLiteral("接下来会打开 Windows 自带的系统还原窗口，"
+                               "可以选择一个还原点把系统恢复到之前的状态。\n\n"
+                               "系统还原不会影响个人文件，但会还原当时之后的软件安装和设置。\n\n"
+                               "继续吗？")))
+            return;
+
+        // rstrui.exe 会由系统自行弹出 UAC 请求
+        if (!QProcess::startDetached(QStringLiteral("rstrui.exe"))) {
+            showMessage("无法打开系统还原",
+                        "未能启动 rstrui.exe。\n\n"
+                        "可以在开始菜单搜索「创建还原点」手动打开系统属性中的系统保护。",
+                        QMessageBox::Warning);
+        }
+    });
+
     // 开机启动项（只读）
     connect(ui->btn_startup, &QAbstractButton::clicked,
             this, &MainWindow::runStartupList);
@@ -1249,6 +1372,9 @@ void MainWindow::runHealthCheck()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("系统体检")))
+        return;
 
     ++m_flow;
 
@@ -1661,6 +1787,9 @@ void MainWindow::runStartupList()
         return;
     }
 
+    if (!claimTask(QStringLiteral("读取开机启动项")))
+        return;
+
     ++m_flow;
 
     clearLog();
@@ -1769,6 +1898,9 @@ void MainWindow::runStartupToggle(const QString &action, const QString &source,
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("修改开机启动项")))
+        return;
 
     ++m_flow;
 
@@ -1924,6 +2056,9 @@ void MainWindow::runPortsList()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("检测端口占用")))
+        return;
 
     ++m_flow;
 
@@ -2084,6 +2219,8 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardDup->setVisible(card == ui->cardDup);
     ui->cardSfc->setVisible(card == ui->cardSfc);
     ui->cardWUpdate->setVisible(card == ui->cardWUpdate);
+    ui->cardRestore->setVisible(card == ui->cardRestore);
+    ui->cardTreemap->setVisible(card == ui->cardTreemap);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
@@ -2091,7 +2228,7 @@ void MainWindow::showSystemResultCard(QWidget *card)
         || card == ui->cardUninstall || card == ui->cardDrivers)
         page = ui->pageManage;
     else if (card == ui->cardLargeFiles || card == ui->cardDiskUsage
-             || card == ui->cardDup)
+             || card == ui->cardDup || card == ui->cardTreemap)
         page = ui->pageTools;
     else if (card == ui->cardDiskHealth || card == ui->cardHwinfo
              || card == ui->cardBattery)
@@ -2119,6 +2256,9 @@ void MainWindow::runLargeFileScan()
     const QString root = QFileDialog::getExistingDirectory(
         this, QStringLiteral("选择要扫描的目录"), QDir::homePath());
     if (root.isEmpty())
+        return;
+
+    if (!claimTask(QStringLiteral("扫描大文件")))
         return;
 
     ++m_flow;
@@ -2264,6 +2404,9 @@ void MainWindow::runDuplicateScan()
     const QString root = QFileDialog::getExistingDirectory(
         this, QStringLiteral("选择要扫描的目录"), QDir::homePath());
     if (root.isEmpty())
+        return;
+
+    if (!claimTask(QStringLiteral("扫描重复文件")))
         return;
 
     runDuplicateScanFor(root);
@@ -2435,6 +2578,9 @@ void MainWindow::runDuplicateDelete()
                        QMessageBox::Warning))
         return;
 
+    if (!claimTask(QStringLiteral("删除重复文件")))
+        return;
+
     const QString script = QDir(QCoreApplication::applicationDirPath())
                                .filePath(QStringLiteral("ps1/duplicates.ps1"));
 
@@ -2571,6 +2717,9 @@ void MainWindow::runDiskHealth()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("检测磁盘健康")))
+        return;
 
     ++m_flow;
 
@@ -2745,6 +2894,9 @@ void MainWindow::runHwInfo()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("读取硬件信息")))
+        return;
 
     ++m_flow;
 
@@ -3014,6 +3166,9 @@ void MainWindow::runBattery()
         return;
     }
 
+    if (!claimTask(QStringLiteral("读取电池信息")))
+        return;
+
     ++m_flow;
 
     clearLog();
@@ -3139,6 +3294,9 @@ void MainWindow::runProcessList()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("读取进程列表")))
+        return;
 
     ++m_flow;
 
@@ -3309,6 +3467,9 @@ void MainWindow::runDiskUsage()
     if (root.isEmpty())
         return;
 
+    if (!claimTask(QStringLiteral("统计磁盘占用")))
+        return;
+
     ++m_flow;
 
     clearLog();
@@ -3468,6 +3629,155 @@ void MainWindow::addUsageRow(const QString &percent, const QString &name,
     ui->diskUsageRowsLayout->addWidget(row);
 }
 
+// ---------------------------------------------------------------- 目录空间树图
+
+void MainWindow::runTreemap(const QString &root)
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/treemap.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少统计脚本",
+                    "未找到 ps1\\treemap.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+    if (root.isEmpty())
+        return;
+
+    if (!claimTask(QStringLiteral("C 盘空间图")))
+        return;
+
+    ++m_flow;
+
+    m_treemapRoot = root;
+    clearLog();
+    appendLog(QStringLiteral("正在统计 %1 的空间占用，目录越大耗时越久，请稍候……")
+                  .arg(QDir::toNativeSeparators(root)));
+
+    ui->treemapSummary->setText(QStringLiteral("正在统计……（目录越大耗时越久）"));
+    if (m_treemap)
+        m_treemap->showPlaceholder(QStringLiteral("正在统计……"));
+    updateTreemapPathButtons();
+    showSystemResultCard(ui->cardTreemap);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Root"), QDir::toNativeSeparators(root)
+    };
+
+    m_task = Task::Treemap;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleTreemap()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("TREEMAP_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("统计空间占用失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        ui->treemapSummary->setText(QStringLiteral("统计失败"));
+        if (m_treemap)
+            m_treemap->showPlaceholder(QStringLiteral("统计失败，请重试"));
+        showMessage("统计空间占用失败",
+                    "未能从 PowerShell 获取有效的统计结果。\n\n"
+                    "请确认目录仍然存在，或更换目录后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    if (data.contains(QStringLiteral("error"))) {
+        ui->treemapSummary->setText(QStringLiteral("目录不存在或无法访问"));
+        if (m_treemap)
+            m_treemap->showPlaceholder(QStringLiteral("这个目录无法读取"));
+        showMessage("无法统计该目录",
+                    "所选目录不存在、已被移动，或当前账户无权读取。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QString root = data.value(QStringLiteral("root")).toString();
+    const qint64 total = static_cast<qint64>(
+        data.value(QStringLiteral("total")).toDouble());
+    const int folders = data.value(QStringLiteral("folders")).toInt();
+
+    // 只有一个子项时 PowerShell 可能输出对象而不是数组
+    QJsonArray items;
+    const QJsonValue value = data.value(QStringLiteral("items"));
+    if (value.isArray())
+        items = value.toArray();
+    else if (value.isObject())
+        items.append(value.toObject());
+
+    QList<TreemapWidget::Item> list;
+    for (const QJsonValue &item : items) {
+        if (!item.isObject())
+            continue;
+        const QJsonObject object = item.toObject();
+        QString name = object.value(QStringLiteral("name")).toString();
+        if (name.isEmpty())
+            continue;
+
+        TreemapWidget::Item entry;
+        entry.isDir = object.value(QStringLiteral("isDir")).toBool();
+        entry.name = entry.isDir ? name : QStringLiteral("本目录文件");
+        entry.path = object.value(QStringLiteral("path")).toString();
+        entry.size = static_cast<qint64>(object.value(QStringLiteral("size")).toDouble());
+        entry.files = object.value(QStringLiteral("files")).toInt();
+        list.append(entry);
+    }
+
+    QString summary;
+    if (list.isEmpty()) {
+        summary = QStringLiteral("%1 下没有可显示的内容")
+                      .arg(QDir::toNativeSeparators(root));
+        if (m_treemap)
+            m_treemap->showPlaceholder(QStringLiteral("这个文件夹里没有可统计的内容"));
+    } else {
+        if (m_treemap)
+            m_treemap->setItems(list);
+        summary = QStringLiteral("%1 · 共 %2 · %3 个文件夹")
+                      .arg(QDir::toNativeSeparators(root), formatFileSize(total))
+                      .arg(folders);
+        if (list.size() < folders)
+            summary += QStringLiteral("（显示占用最大的 %1 项）").arg(list.size());
+        summary += QStringLiteral(" · 点击方块可进入文件夹");
+    }
+
+    ui->treemapSummary->setText(summary);
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::updateTreemapPathButtons()
+{
+    ui->treemapPath->setText(QDir::toNativeSeparators(m_treemapRoot));
+
+    // 已经到盘符根目录时「上一级」不可用
+    QDir dir(m_treemapRoot);
+    ui->treemapUpBtn->setEnabled(dir.cdUp());
+}
+
 // ---------------------------------------------------------------- 已安装程序
 
 void MainWindow::runUninstallList()
@@ -3482,6 +3792,9 @@ void MainWindow::runUninstallList()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("读取已安装程序")))
+        return;
 
     ++m_flow;
 
@@ -3665,6 +3978,9 @@ void MainWindow::runUninstall(const QString &key, const QString &name)
         return;
     }
 
+    if (!claimTask(QStringLiteral("卸载程序")))
+        return;
+
     ++m_flow;
 
     appendLog("-------------------");
@@ -3780,6 +4096,9 @@ void MainWindow::runDriverList()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("读取驱动列表")))
+        return;
 
     ++m_flow;
 
@@ -3926,6 +4245,9 @@ void MainWindow::runHostsRead()
         return;
     }
 
+    if (!claimTask(QStringLiteral("读取 Hosts")))
+        return;
+
     ++m_flow;
 
     appendLog("正在读取 Hosts 文件……");
@@ -4064,6 +4386,9 @@ void MainWindow::runHostsWrite(const QString &action, const QString &source)
         return;
     }
 
+    if (!claimTask(QStringLiteral("修改 Hosts")))
+        return;
+
     ++m_flow;
 
     m_hostsRestore = (action == QLatin1String("restore"));
@@ -4181,6 +4506,9 @@ void MainWindow::runDnsRead()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("读取 DNS 设置")))
+        return;
 
     ++m_flow;
 
@@ -4322,6 +4650,9 @@ void MainWindow::runDnsWrite(const QString &servers)
                     "未找到 ps1\\dns.ps1，无法切换。", QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("切换 DNS")))
+        return;
 
     ++m_flow;
 
@@ -4479,6 +4810,9 @@ void MainWindow::runSfcRepair(const QString &mode)
                            "继续吗？");
 
     if (!confirmAction(dism ? "修复系统映像" : "扫描并修复系统文件", text))
+        return;
+
+    if (!claimTask(QStringLiteral("系统文件检查")))
         return;
 
     ++m_flow;
@@ -4639,6 +4973,9 @@ void MainWindow::runWUpdateFix()
                            "继续吗？")))
         return;
 
+    if (!claimTask(QStringLiteral("重置更新组件")))
+        return;
+
     ++m_flow;
 
     const QString logPath = QDir(QDir::tempPath())
@@ -4713,6 +5050,403 @@ void MainWindow::handleWUpdateFix(int exitCode)
     ui->wupdateSummary->style()->unpolish(ui->wupdateSummary);
     ui->wupdateSummary->style()->polish(ui->wupdateSummary);
     m_updateLogPath.clear();
+}
+
+// ---------------------------------------------------------------- 更新组件清理
+
+void MainWindow::runSxsCleanup()
+{
+    if (m_task == Task::SxsCleanup)
+        return;
+
+    if (!batExists("winSxsClean.bat")) {
+        showMessage("缺少脚本文件",
+                    "未找到所需的脚本文件 winSxsClean.bat。\n\n"
+                    "请确认程序目录下的 bat 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    if (!confirmAction(
+            "清理更新组件",
+            QStringLiteral("会删除 Windows 更新缓存里已被新版取代的旧组件，"
+                           "这些文件已经用不到了，清理后通常能腾出几个 GB 的 C 盘空间。\n\n"
+                           "已安装的更新和系统功能不受影响，但清理后无法再卸载被删除的旧更新。\n"
+                           "过程中更新功能暂时不可用，正常上网和使用电脑不受影响，"
+                           "耗时可能几分钟到十几分钟。\n\n"
+                           "开始时会弹出管理员权限请求，请选「是」。\n\n"
+                           "继续吗？")))
+        return;
+
+    if (!claimTask(QStringLiteral("清理更新组件")))
+        return;
+
+    ++m_flow;
+
+    const QString logPath = QDir(QDir::tempPath())
+                                .filePath(QStringLiteral("wt_sxs.log"));
+    // 先删旧日志，避免上一次的结果混进本次展示
+    QFile::remove(logPath);
+
+    m_sxsLogPath = logPath;
+    ui->wupdateLog->clear();
+    ui->wupdateSummary->setText(
+        QStringLiteral("正在清理更新组件，可能需要几分钟，请保持电脑开机……"));
+    ui->wupdateSummary->setProperty("state", QString());
+    ui->wupdateSummary->style()->unpolish(ui->wupdateSummary);
+    ui->wupdateSummary->style()->polish(ui->wupdateSummary);
+    showSystemResultCard(ui->cardWUpdate);
+
+    // 清理期间禁用重置按钮，避免两套操作同时改动组件存储
+    ui->btnWUpdateFix->setEnabled(false);
+
+    appendLog("-------------------");
+    appendLog("正在清理 Windows 更新组件，请稍候……");
+
+    m_task = Task::SxsCleanup;
+    m_runner->runBat("winSxsClean.bat",
+                     {QDir::toNativeSeparators(logPath)});
+}
+
+void MainWindow::handleSxsCleanup(int exitCode)
+{
+    ui->btnWUpdateFix->setEnabled(true);
+
+    // 脚本输出写在日志文件里，结束后一次性读取展示
+    QFile file(m_sxsLogPath);
+    if (file.open(QIODevice::ReadOnly)) {
+        const QString text = decodeLogFile(file.readAll()).trimmed();
+        file.close();
+        if (!text.isEmpty()) {
+            QTextCursor cursor(ui->wupdateLog->document());
+            cursor.movePosition(QTextCursor::End);
+            cursor.insertText(text);
+            ui->wupdateLog->setTextCursor(cursor);
+            ui->wupdateLog->ensureCursorVisible();
+        }
+    }
+
+    QString state;
+    if (exitCode == 0) {
+        state = QStringLiteral("ok");
+        ui->wupdateSummary->setText(
+            QStringLiteral("更新组件清理完成。已被新版取代的旧更新文件已经删除，"
+                           "C 盘可用空间应该有所增加。重启后可到「实用工具 → "
+                           "C 盘空间图」再核对一次。"));
+        appendLog("-------------------");
+        appendLog("Windows 更新组件清理完成。");
+    } else {
+        state = QStringLiteral("risk");
+        ui->wupdateSummary->setText(
+            QStringLiteral("清理未完成（退出码 %1）。若日志中没有有效内容，"
+                           "通常是取消了管理员权限请求；否则可能是组件存储正被"
+                           "Windows 更新占用，重启后再试一次。").arg(exitCode));
+        appendLog("-------------------");
+        appendLog(QStringLiteral("Windows 更新组件清理未完成，退出码：%1").arg(exitCode));
+        showMessage("组件清理未完成",
+                    QStringLiteral("退出码为 %1。\n\n"
+                                   "若刚刚取消了管理员权限请求，重新点击按钮并在"
+                                   "弹窗中选择「是」即可；其他情况请查看卡片中的日志。")
+                        .arg(exitCode),
+                    QMessageBox::Warning);
+    }
+
+    ui->wupdateSummary->setProperty("state", state);
+    ui->wupdateSummary->style()->unpolish(ui->wupdateSummary);
+    ui->wupdateSummary->style()->polish(ui->wupdateSummary);
+    m_sxsLogPath.clear();
+}
+
+// ---------------------------------------------------------------- 系统还原点
+
+void MainWindow::runRestorePointList()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/restorepoint.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少还原点脚本",
+                    "未找到 ps1\\restorepoint.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    if (!claimTask(QStringLiteral("读取系统还原点")))
+        return;
+
+    ++m_flow;
+
+    // 清空上一次的结果
+    while (QLayoutItem *item = ui->restoreRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+
+    ui->restoreSummary->setText(QStringLiteral("正在读取还原点……"));
+    ui->restoreSummary->setProperty("state", QString());
+    ui->restoreSummary->style()->unpolish(ui->restoreSummary);
+    ui->restoreSummary->style()->polish(ui->restoreSummary);
+    showSystemResultCard(ui->cardRestore);
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), QStringLiteral("list")
+    };
+
+    m_task = Task::RestoreList;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleRestorePointList()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("RESTOREPOINT_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        ui->restoreSummary->setText(QStringLiteral("读取还原点失败，请重试"));
+        ui->restoreSummary->setProperty("state", QStringLiteral("risk"));
+        ui->restoreSummary->style()->unpolish(ui->restoreSummary);
+        ui->restoreSummary->style()->polish(ui->restoreSummary);
+        appendLog("-------------------");
+        appendLog("读取系统还原点失败：未能解析脚本输出。");
+        const QString raw = output.trimmed();
+        if (!raw.isEmpty())
+            appendLog(raw.left(2000));
+        return;
+    }
+
+    const QJsonObject data = document.object();
+    const bool enabled = data.value(QStringLiteral("enabled")).toBool();
+
+    // 只有一个还原点时 PowerShell 可能输出对象而不是数组
+    QJsonArray points;
+    const QJsonValue value = data.value(QStringLiteral("points"));
+    if (value.isArray())
+        points = value.toArray();
+    else if (value.isObject())
+        points.append(value.toObject());
+
+    int shown = 0;
+    for (const QJsonValue &pointValue : points) {
+        if (!pointValue.isObject())
+            continue;
+        const QJsonObject point = pointValue.toObject();
+
+        QString time = point.value(QStringLiteral("time")).toString();
+        if (time.isEmpty())
+            time = QStringLiteral("时间未知");
+
+        QString description = point.value(QStringLiteral("desc")).toString().trimmed();
+        if (description.isEmpty())
+            description = QStringLiteral("未命名还原点");
+
+        const int seq = point.value(QStringLiteral("seq")).toInt();
+        addRestoreRow(time, description,
+                      seq > 0 ? QStringLiteral("序号 %1").arg(seq)
+                              : QStringLiteral("系统还原点"));
+        ++shown;
+    }
+
+    QString summary;
+    QString state;
+    if (!enabled) {
+        state = QStringLiteral("warn");
+        summary = QStringLiteral("系统还原当前是关闭的，所以没有可用的还原点。"
+                                 "点下面的「现在创建一个还原点」，程序会自动开启系统还原。");
+    } else if (shown == 0) {
+        state = QStringLiteral("warn");
+        summary = QStringLiteral("系统还原已开启，但还没有还原点。Windows 通常会在"
+                                 "安装软件或更新前自动创建，也可以现在就手动创建一个。");
+    } else {
+        summary = QStringLiteral("找到 %1 个还原点（最多显示最近 10 个）。"
+                                 "要恢复系统，点「打开系统还原」后在系统窗口里选择。")
+                      .arg(shown);
+    }
+
+    ui->restoreSummary->setText(summary);
+    ui->restoreSummary->setProperty("state", state);
+    ui->restoreSummary->style()->unpolish(ui->restoreSummary);
+    ui->restoreSummary->style()->polish(ui->restoreSummary);
+    ui->restoreScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::runRestorePointCreate()
+{
+    if (m_restoreBusy || m_task == Task::RestoreCreate)
+        return;
+
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/restorepoint.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少还原点脚本",
+                    "未找到 ps1\\restorepoint.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    if (!confirmAction(
+            "创建系统还原点",
+            QStringLiteral("会在当前系统状态下创建一个还原点，之后可以用它把系统设置"
+                           "和已安装的软件恢复到现在的状态。\n\n"
+                           "个人文件（文档、照片等）不会受影响。如果系统还原原本是"
+                           "关闭的，程序会自动为你开启。\n\n"
+                           "创建时会弹出管理员权限请求，请选「是」，"
+                           "通常十几秒到一两分钟。\n\n继续吗？")))
+        return;
+
+    if (!claimTask(QStringLiteral("创建系统还原点")))
+        return;
+
+    ++m_flow;
+
+    m_restoreBusy = true;
+    ui->restoreCreateBtn->setEnabled(false);
+    ui->restoreSummary->setText(
+        QStringLiteral("正在创建还原点，请稍候……若弹出管理员权限请求，请选「是」。"));
+    ui->restoreSummary->setProperty("state", QString());
+    ui->restoreSummary->style()->unpolish(ui->restoreSummary);
+    ui->restoreSummary->style()->polish(ui->restoreSummary);
+    showSystemResultCard(ui->cardRestore);
+
+    appendLog("-------------------");
+    appendLog("正在创建系统还原点，请稍候……");
+
+    // 说明文字只用 ASCII：它会经命令行传给 PowerShell，避免编码问题
+    const QString description =
+        QStringLiteral("WindowsTool ")
+        + QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), QStringLiteral("create"),
+        QStringLiteral("-Description"), description
+    };
+
+    m_task = Task::RestoreCreate;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleRestorePointCreate()
+{
+    m_restoreBusy = false;
+    ui->restoreCreateBtn->setEnabled(true);
+
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("RESTOREPOINT_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+
+    QString reason;
+    QString state = QStringLiteral("risk");
+    bool ok = false;
+    if (!payload.isEmpty() && parseError.error == QJsonParseError::NoError
+        && document.isObject()) {
+        const QJsonObject data = document.object();
+        ok = data.value(QStringLiteral("ok")).toBool();
+        const QString code = data.value(QStringLiteral("code")).toString();
+
+        if (!ok) {
+            if (code == QLatin1String("canceled"))
+                reason = QStringLiteral("取消了管理员权限请求，还原点没有创建。");
+            else if (code == QLatin1String("enable-failed"))
+                reason = QStringLiteral("未能开启系统还原功能，还原点没有创建。");
+            else if (code == QLatin1String("failed"))
+                reason = QStringLiteral("Windows 未能创建还原点，可稍后重试；"
+                                        "也请确认 C 盘剩余空间充足。");
+            else if (code == QLatin1String("no-result"))
+                reason = QStringLiteral("管理员进程没有返回结果，请重试。");
+            else
+                reason = QStringLiteral("创建失败（%1）。")
+                             .arg(code.isEmpty() ? QStringLiteral("未知原因") : code);
+        }
+    } else {
+        reason = QStringLiteral("未能解析脚本输出，请重试。");
+    }
+
+    if (ok) {
+        state = QStringLiteral("ok");
+        ui->restoreSummary->setText(
+            QStringLiteral("还原点创建成功，正在刷新列表……"));
+        appendLog("-------------------");
+        appendLog("系统还原点创建成功。");
+
+        // 等本次任务状态复位后再读取列表，避免覆盖当前结果
+        QTimer::singleShot(0, this, &MainWindow::runRestorePointList);
+    } else {
+        ui->restoreSummary->setText(
+            QStringLiteral("还原点创建失败：%1").arg(reason));
+        appendLog("-------------------");
+        appendLog(QStringLiteral("创建系统还原点失败：%1").arg(reason));
+    }
+
+    ui->restoreSummary->setProperty("state", state);
+    ui->restoreSummary->style()->unpolish(ui->restoreSummary);
+    ui->restoreSummary->style()->polish(ui->restoreSummary);
+}
+
+void MainWindow::addRestoreRow(const QString &time, const QString &description,
+                               const QString &detail)
+{
+    QWidget *row = new QWidget(ui->restoreRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(time, row);
+    badge->setObjectName(QStringLiteral("restoreBadge"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(124);
+
+    QLabel *title = new QLabel(description, row);
+    title->setObjectName(QStringLiteral("restoreName"));
+    title->setWordWrap(true);
+    title->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("restoreDetail"));
+    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->restoreRowsLayout->addWidget(row);
 }
 
 // ---------------------------------------------------------------- 通用工具
@@ -4845,6 +5579,28 @@ void MainWindow::setupTools()
     ui->bootTimeRowsLayout->setAlignment(Qt::AlignTop);
     ui->fileLockRowsLayout->setAlignment(Qt::AlignTop);
 
+    // C 盘空间图：自绘矩形树图，点击文件夹方块逐层进入
+    m_treemap = new TreemapWidget(this);
+    ui->treemapLayout->addWidget(m_treemap);
+    connect(m_treemap, &TreemapWidget::directoryActivated,
+            this, &MainWindow::runTreemap);
+
+    connect(ui->btn_treemap, &QAbstractButton::clicked, this, [this]() {
+        runTreemap(QStringLiteral("C:\\"));
+    });
+    connect(ui->treemapUpBtn, &QPushButton::clicked, this, [this]() {
+        QDir dir(m_treemapRoot);
+        if (dir.cdUp())
+            runTreemap(dir.absolutePath());
+    });
+    connect(ui->treemapPickBtn, &QPushButton::clicked, this, [this]() {
+        const QString root = QFileDialog::getExistingDirectory(
+            this, QStringLiteral("选择要看占用情况的目录"),
+            m_treemapRoot.isEmpty() ? QDir::homePath() : m_treemapRoot);
+        if (!root.isEmpty())
+            runTreemap(root);
+    });
+
     // 右键菜单管理
     connect(ui->btn_contextMenu, &QAbstractButton::clicked,
             this, &MainWindow::runContextMenuList);
@@ -4906,6 +5662,9 @@ void MainWindow::runContextMenuList()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("读取右键菜单项")))
+        return;
 
     ++m_flow;
 
@@ -5073,6 +5832,9 @@ void MainWindow::runContextMenuToggle(const QString &root, const QString &scope,
         return;
     }
 
+    if (!claimTask(QStringLiteral("修改右键菜单项")))
+        return;
+
     m_cmRoot = root;
     m_cmScope = scope;
     m_cmEntry = entry;
@@ -5156,6 +5918,9 @@ void MainWindow::runBootTime()
                     QMessageBox::Critical);
         return;
     }
+
+    if (!claimTask(QStringLiteral("分析开机耗时")))
+        return;
 
     ++m_flow;
 
@@ -5324,6 +6089,9 @@ void MainWindow::runFileLock(const QString &path)
         return;
     }
 
+    if (!claimTask(QStringLiteral("查找文件占用")))
+        return;
+
     ++m_flow;
 
     clearLog();
@@ -5467,4 +6235,265 @@ void MainWindow::addFileLockRow(const QString &badge, const QString &name,
     const int insertAt = qMax(0, ui->fileLockRowsLayout->count() - 1);
     ui->fileLockRowsLayout->insertWidget(insertAt, row);
 }
+
+// ---------------------------------------------------------------- 任务并发控制
+
+QString MainWindow::currentTaskLabel() const
+{
+    switch (m_task) {
+    case Task::PingAutoCheck:   return QStringLiteral("网络连通性检测");
+    case Task::DnsCheck:        return QStringLiteral("DNS 解析检查");
+    case Task::FixDnsAuto:      return QStringLiteral("自动修复网络配置");
+    case Task::FixDnsManual:    return QStringLiteral("刷新网络配置");
+    case Task::NetInfo:         return QStringLiteral("读取网络信息");
+    case Task::Cleaner:         return QStringLiteral("清理系统临时文件");
+    case Task::WinsockReset:    return QStringLiteral("重置 Winsock");
+    case Task::FixWhite:        return QStringLiteral("重建桌面图标缓存");
+    case Task::HealthCheck:     return QStringLiteral("系统体检");
+    case Task::StartupList:     return QStringLiteral("读取开机启动项");
+    case Task::StartupToggle:   return QStringLiteral("修改开机启动项");
+    case Task::PortsList:       return QStringLiteral("检测端口占用");
+    case Task::LargeFiles:      return QStringLiteral("扫描大文件");
+    case Task::DuplicateScan:   return QStringLiteral("扫描重复文件");
+    case Task::DuplicateDelete: return QStringLiteral("删除重复文件");
+    case Task::DiskHealth:      return QStringLiteral("检测磁盘健康");
+    case Task::HwInfo:          return QStringLiteral("读取硬件信息");
+    case Task::Battery:         return QStringLiteral("读取电池信息");
+    case Task::ProcessList:     return QStringLiteral("读取进程列表");
+    case Task::DiskUsage:       return QStringLiteral("统计磁盘占用");
+    case Task::Treemap:         return QStringLiteral("统计目录空间");
+    case Task::UninstallList:   return QStringLiteral("读取已安装程序");
+    case Task::UninstallAction: return QStringLiteral("卸载程序");
+    case Task::DriverList:      return QStringLiteral("读取驱动列表");
+    case Task::HostsRead:       return QStringLiteral("读取 Hosts");
+    case Task::HostsWrite:      return QStringLiteral("修改 Hosts");
+    case Task::DnsRead:         return QStringLiteral("读取 DNS 设置");
+    case Task::DnsWrite:        return QStringLiteral("切换 DNS");
+    case Task::SfcRepair:       return QStringLiteral("系统文件检查");
+    case Task::WUpdateRepair:   return QStringLiteral("重置更新组件");
+    case Task::SxsCleanup:      return QStringLiteral("清理更新组件");
+    case Task::RestoreList:     return QStringLiteral("读取系统还原点");
+    case Task::RestoreCreate:   return QStringLiteral("创建系统还原点");
+    case Task::ContextMenuList: return QStringLiteral("读取右键菜单项");
+    case Task::ContextMenuToggle: return QStringLiteral("修改右键菜单项");
+    case Task::BootTime:        return QStringLiteral("分析开机耗时");
+    case Task::FileLock:        return QStringLiteral("查找文件占用");
+    default:                    return QStringLiteral("当前任务");
+    }
+}
+
+bool MainWindow::claimTask(const QString &nextLabel)
+{
+    if (m_task == Task::None)
+        return true;
+
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("还有任务正在运行"));
+    box.setIcon(QMessageBox::Question);
+    box.setText(QStringLiteral("「%1」还没有结束。").arg(currentTaskLabel()));
+    box.setInformativeText(
+        QStringLiteral("现在开始「%1」，可以把它放到后台继续运行，"
+                       "也可以立即终止它。要怎么做？").arg(nextLabel));
+
+    QPushButton *stopButton = box.addButton(QStringLiteral("终止当前任务"),
+                                            QMessageBox::DestructiveRole);
+    QPushButton *bgButton = box.addButton(QStringLiteral("放到后台并继续"),
+                                          QMessageBox::AcceptRole);
+    box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+    box.setDefaultButton(bgButton);
+    box.exec();
+
+    QAbstractButton *clicked = box.clickedButton();
+    if (clicked == stopButton) {
+        abortForegroundTask();
+        return true;
+    }
+    if (clicked == bgButton) {
+        moveForegroundToBackground();
+        return true;
+    }
+    return false;
+}
+
+void MainWindow::abortForegroundTask()
+{
+    ProcessRunner *old = m_runner;
+    if (old) {
+        // 先断开回调：旧任务的 finished 不应该再动界面
+        disconnect(old, nullptr, this, nullptr);
+        old->stop();
+        old->deleteLater();
+    }
+    m_runner = createRunner();
+
+    // 让串联流程里尚未触发的定时器失效，避免旧流程继续启动新命令
+    ++m_flow;
+
+    // 被中止的任务可能把某些控件留在"运行中"状态，这里统一复位
+    if (m_sfcTimer)
+        m_sfcTimer->stop();
+    setSfcRunning(false);
+    m_restoreBusy = false;
+    m_sxsLogPath.clear();
+    ui->restoreCreateBtn->setEnabled(true);
+    ui->btnWUpdateFix->setEnabled(true);
+
+    m_task = Task::None;
+    appendLog(QStringLiteral("已终止上一个任务。"));
+}
+
+void MainWindow::moveForegroundToBackground()
+{
+    ProcessRunner *runner = m_runner;
+    if (!runner)
+        return;
+
+    BackgroundTask task;
+    task.runner = runner;
+    task.label = currentTaskLabel();
+    m_background.append(task);
+
+    // 后台任务只关心"结束"这件事，结果不再写回界面
+    disconnect(runner, nullptr, this, nullptr);
+    connect(runner, &ProcessRunner::finished, this, [this, runner](int) {
+        finishBackgroundTask(runner, QStringLiteral("已完成"));
+    });
+    connect(runner, &ProcessRunner::failed, this, [this, runner](const QString &reason) {
+        finishBackgroundTask(runner, QStringLiteral("失败：%1").arg(reason));
+    });
+
+    // 新任务使用新的执行器，旧进程继续在后台跑
+    m_runner = createRunner();
+
+    // 旧任务的串联流程（如自动检测）到此为止
+    ++m_flow;
+
+    if (m_sfcTimer)
+        m_sfcTimer->stop();
+    setSfcRunning(false);
+    m_restoreBusy = false;
+    m_sxsLogPath.clear();
+    ui->restoreCreateBtn->setEnabled(true);
+    ui->btnWUpdateFix->setEnabled(true);
+
+    m_task = Task::None;
+
+    appendLog(QStringLiteral("「%1」已转到后台继续运行。").arg(task.label));
+    updateBackgroundEntry();
+    showBackgroundTasks();
+}
+
+void MainWindow::finishBackgroundTask(ProcessRunner *runner, const QString &result)
+{
+    QString label;
+    bool found = false;
+    for (int i = 0; i < m_background.size(); ++i) {
+        if (m_background.at(i).runner == runner) {
+            label = m_background.at(i).label;
+            m_background.removeAt(i);
+            found = true;
+            break;
+        }
+    }
+
+    if (found)
+        appendLog(QStringLiteral("后台任务「%1」%2。").arg(label, result));
+
+    if (runner)
+        runner->deleteLater();
+
+    updateBackgroundEntry();
+    refreshBackgroundDialog();
+}
+
+void MainWindow::updateBackgroundEntry()
+{
+    const int count = m_background.size();
+    ui->bgTaskButton->setVisible(count > 0);
+    ui->bgTaskButton->setText(
+        count > 0 ? QStringLiteral("后台任务 %1").arg(count)
+                  : QStringLiteral("后台任务"));
+}
+
+void MainWindow::showBackgroundTasks()
+{
+    refreshBackgroundDialog();
+    m_bgDialog->show();
+    m_bgDialog->raise();
+    m_bgDialog->activateWindow();
+}
+
+void MainWindow::refreshBackgroundDialog()
+{
+    if (!m_bgDialog) {
+        m_bgDialog = new QDialog(this);
+        m_bgDialog->setObjectName(QStringLiteral("bgDialog"));
+        m_bgDialog->setWindowTitle(QStringLiteral("后台任务"));
+        m_bgDialog->setMinimumWidth(440);
+
+        QVBoxLayout *outer = new QVBoxLayout(m_bgDialog);
+        outer->setContentsMargins(18, 16, 18, 16);
+        outer->setSpacing(10);
+
+        QLabel *hint = new QLabel(
+            QStringLiteral("这些任务仍在后台运行，可以随时取消。"
+                           "关闭这个窗口不会影响它们。"), m_bgDialog);
+        hint->setObjectName(QStringLiteral("bgHint"));
+        hint->setWordWrap(true);
+        outer->addWidget(hint);
+
+        m_bgRowsLayout = new QVBoxLayout;
+        m_bgRowsLayout->setSpacing(8);
+        m_bgRowsLayout->setAlignment(Qt::AlignTop);
+        outer->addLayout(m_bgRowsLayout, 1);
+
+        QHBoxLayout *buttons = new QHBoxLayout;
+        buttons->addStretch();
+        QPushButton *closeButton = new QPushButton(QStringLiteral("关闭"), m_bgDialog);
+        closeButton->setObjectName(QStringLiteral("bgCloseBtn"));
+        closeButton->setCursor(Qt::PointingHandCursor);
+        buttons->addWidget(closeButton);
+        outer->addLayout(buttons);
+
+        connect(closeButton, &QPushButton::clicked, m_bgDialog, &QDialog::hide);
+    }
+
+    while (QLayoutItem *item = m_bgRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+
+    if (m_background.isEmpty()) {
+        QLabel *empty = new QLabel(QStringLiteral("目前没有后台任务。"), m_bgDialog);
+        empty->setObjectName(QStringLiteral("bgEmpty"));
+        m_bgRowsLayout->addWidget(empty);
+        return;
+    }
+
+    for (const BackgroundTask &task : m_background) {
+        QWidget *row = new QWidget(m_bgDialog);
+        QHBoxLayout *layout = new QHBoxLayout(row);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(10);
+
+        QLabel *name = new QLabel(task.label, row);
+        name->setObjectName(QStringLiteral("bgTaskName"));
+
+        QPushButton *cancelButton = new QPushButton(QStringLiteral("取消"), row);
+        cancelButton->setObjectName(QStringLiteral("bgCancelBtn"));
+        cancelButton->setCursor(Qt::PointingHandCursor);
+
+        ProcessRunner *runner = task.runner;
+        connect(cancelButton, &QPushButton::clicked, this, [this, runner]() {
+            runner->stop();
+            finishBackgroundTask(runner, QStringLiteral("已取消"));
+        });
+
+        layout->addWidget(name, 1);
+        layout->addWidget(cancelButton);
+        m_bgRowsLayout->addWidget(row);
+    }
+}
+
 

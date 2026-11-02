@@ -13,7 +13,10 @@ QT_END_NAMESPACE
 class ProcessRunner;
 class QToolButton;
 class QTimer;
+class QDialog;
+class QVBoxLayout;
 class SysMonitor;
+class TreemapWidget;
 
 /**
  * 主窗口：GUI 与流程编排。
@@ -67,6 +70,10 @@ private:
         ContextMenuList, ///< 右键菜单项枚举（contextmenu.ps1 list）
         ContextMenuToggle, ///< 禁用/启用右键菜单项（contextmenu.ps1 disable/enable）
         StartupToggle,   ///< 禁用/启用开机启动项（startupToggle.ps1）
+        Treemap,         ///< 目录空间树图（treemap.ps1）
+        SxsCleanup,      ///< 清理 Windows 更新组件（winSxsClean.bat）
+        RestoreList,     ///< 读取系统还原点（restorepoint.ps1 -Action list）
+        RestoreCreate,   ///< 创建系统还原点（restorepoint.ps1 -Action create）
         SfcRepair,       ///< 系统文件修复（sfcRepair.bat sfc/dism）
         WUpdateRepair    ///< Windows 更新修复（winUpdateFix.bat）
     };
@@ -165,6 +172,23 @@ private:
     void handleDiskUsage();
     void addUsageRow(const QString &percent, const QString &name,
                      const QString &detail);
+
+    // 目录空间树图（只读，可逐层进入）
+    void runTreemap(const QString &root);
+    void handleTreemap();
+    void updateTreemapPathButtons();
+
+    // 清理 Windows 更新组件
+    void runSxsCleanup();
+    void handleSxsCleanup(int exitCode);
+
+    // 系统还原点
+    void runRestorePointList();
+    void handleRestorePointList();
+    void runRestorePointCreate();
+    void handleRestorePointCreate();
+    void addRestoreRow(const QString &time, const QString &description,
+                       const QString &detail);
 
     // 已安装程序清单 / 卸载
     void runUninstallList();
@@ -281,6 +305,27 @@ private:
     /** CPU/内存/磁盘/网络实时采样器 */
     SysMonitor *m_monitor = nullptr;
 
+    /** 目录空间树图：当前扫描的根目录与绘图控件 */
+    QString m_treemapRoot;
+    TreemapWidget *m_treemap = nullptr;
+
+    /** 更新组件清理：脚本日志路径 */
+    QString m_sxsLogPath;
+
+    /** 系统还原点：创建过程中禁用按钮，避免重复触发 */
+    bool m_restoreBusy = false;
+
+    /** 转到后台继续运行的任务（前台一次只跑一个，后台可同时跑多个） */
+    struct BackgroundTask {
+        ProcessRunner *runner = nullptr;
+        QString label;
+    };
+    QList<BackgroundTask> m_background;
+
+    /** 后台任务窗口（懒创建，非模态） */
+    QDialog *m_bgDialog = nullptr;
+    QVBoxLayout *m_bgRowsLayout = nullptr;
+
     /**
      * 耗时任务的"正在处理"提示。
      *
@@ -303,6 +348,17 @@ private:
     bool confirmAction(const QString &title, const QString &text,
                        QMessageBox::Icon icon = QMessageBox::Warning);
     bool batExists(const QString &fileName) const;
+
+    // 任务并发控制：前台任务未结束时询问"终止"还是"后台运行"
+    ProcessRunner *createRunner();
+    bool claimTask(const QString &nextLabel);
+    QString currentTaskLabel() const;
+    void abortForegroundTask();
+    void moveForegroundToBackground();
+    void finishBackgroundTask(ProcessRunner *runner, const QString &result);
+    void showBackgroundTasks();
+    void refreshBackgroundDialog();
+    void updateBackgroundEntry();
 
     Ui::MainWindow *ui;
     ProcessRunner *m_runner;

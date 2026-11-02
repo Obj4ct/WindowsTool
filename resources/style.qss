@@ -114,7 +114,8 @@
 #cardSfc, #cardWUpdate, #cardHardware, #cardHwinfo, #cardDiskHealth,
 #cardMonitor, #cardBattery, #cardManage, #cardStartup, #cardProcesses,
 #cardUninstall, #cardDrivers, #cardTools, #cardLargeFiles,
-#cardDiskUsage, #cardDup, #cardContextMenu, #cardBootTime, #cardFileLock {
+#cardDiskUsage, #cardTreemap, #cardDup, #cardContextMenu, #cardBootTime,
+#cardFileLock, #cardRestore {
     background: #FFFFFF;
     border: 1px solid #E7ECF4;
     border-radius: 14px;
@@ -132,8 +133,8 @@
 #healthTitle, #portsTitle, #hostsTitle, #dnsTitle, #sfcTitle, #wupdateTitle,
 #hwinfoTitle, #diskHealthTitle, #monitorTitle, #batteryTitle,
 #startupTitle, #processesTitle, #uninstallTitle, #driversTitle,
-#largeFilesTitle, #diskUsageTitle, #dupTitle,
-#contextMenuTitle, #bootTimeTitle, #fileLockTitle {
+#largeFilesTitle, #diskUsageTitle, #treemapTitle, #dupTitle,
+#contextMenuTitle, #bootTimeTitle, #fileLockTitle, #restoreTitle {
     color: #1A2433;
     font-size: 15px;
     font-weight: 600;
@@ -149,9 +150,10 @@
 #btn_quickHealth, #btn_quickNetwork, #btn_quickPorts, #btn_quickDisk,
 #btn_autoCheck, #btn_showNetWork, #btn_ports, #btn_hosts, #btn_dns,
 #btn_cleaner, #btn_fixWhite, #btn_healthCheck, #btn_sfc, #btn_wupdate,
+#btn_sxsClean, #btn_restore,
 #btn_diskHealth, #btn_hwinfo, #btn_battery, #btn_monitor,
 #btn_startup, #btn_process, #btn_uninstall, #btn_drivers,
-#btn_largeFiles, #btn_treedisk, #btn_dup, #btn_contextMenu,
+#btn_largeFiles, #btn_treemap, #btn_treedisk, #btn_dup, #btn_contextMenu,
 #btn_bootTime, #btn_fileLock {
     background: #F7F9FD;
     border: 1px solid #E6ECF6;
@@ -164,9 +166,10 @@
 #btn_quickHealth:hover, #btn_quickNetwork:hover, #btn_quickPorts:hover, #btn_quickDisk:hover,
 #btn_autoCheck:hover, #btn_showNetWork:hover, #btn_ports:hover, #btn_hosts:hover, #btn_dns:hover,
 #btn_cleaner:hover, #btn_fixWhite:hover, #btn_healthCheck:hover, #btn_sfc:hover, #btn_wupdate:hover,
+#btn_sxsClean:hover, #btn_restore:hover,
 #btn_diskHealth:hover, #btn_hwinfo:hover, #btn_battery:hover, #btn_monitor:hover,
 #btn_startup:hover, #btn_process:hover, #btn_uninstall:hover, #btn_drivers:hover,
-#btn_largeFiles:hover, #btn_treedisk:hover, #btn_dup:hover, #btn_contextMenu:hover,
+#btn_largeFiles:hover, #btn_treemap:hover, #btn_treedisk:hover, #btn_dup:hover, #btn_contextMenu:hover,
 #btn_bootTime:hover, #btn_fileLock:hover {
     background: #FFFFFF;
     border-color: #A9C4F5;
@@ -175,9 +178,10 @@
 #btn_quickHealth:pressed, #btn_quickNetwork:pressed, #btn_quickPorts:pressed, #btn_quickDisk:pressed,
 #btn_autoCheck:pressed, #btn_showNetWork:pressed, #btn_ports:pressed, #btn_hosts:pressed, #btn_dns:pressed,
 #btn_cleaner:pressed, #btn_fixWhite:pressed, #btn_healthCheck:pressed, #btn_sfc:pressed, #btn_wupdate:pressed,
+#btn_sxsClean:pressed, #btn_restore:pressed,
 #btn_diskHealth:pressed, #btn_hwinfo:pressed, #btn_battery:pressed, #btn_monitor:pressed,
 #btn_startup:pressed, #btn_process:pressed, #btn_uninstall:pressed, #btn_drivers:pressed,
-#btn_largeFiles:pressed, #btn_treedisk:pressed, #btn_dup:pressed, #btn_contextMenu:pressed,
+#btn_largeFiles:pressed, #btn_treemap:pressed, #btn_treedisk:pressed, #btn_dup:pressed, #btn_contextMenu:pressed,
 #btn_bootTime:pressed, #btn_fileLock:pressed {
     background: #EDF3FD;
     border-color: #8FB4EE;
@@ -185,9 +189,11 @@
 #btn_quickHealth:disabled, #btn_quickNetwork:disabled, #btn_quickPorts:disabled, #btn_quickDisk:disabled,
 #btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_ports:disabled, #btn_hosts:disabled,
 #btn_dns:disabled, #btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled,
-#btn_sfc:disabled, #btn_wupdate:disabled, #btn_diskHealth:disabled, #btn_hwinfo:disabled,
+#btn_sfc:disabled, #btn_wupdate:disabled, #btn_sxsClean:disabled, #btn_restore:disabled,
+#btn_diskHealth:disabled, #btn_hwinfo:disabled,
 #btn_battery:disabled, #btn_monitor:disabled, #btn_startup:disabled, #btn_process:disabled,
-#btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled,
+#btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled,
+#btn_treemap:disabled, #btn_treedisk:disabled,
 #btn_dup:disabled, #btn_contextMenu:disabled, #btn_bootTime:disabled, #btn_fileLock:disabled {
     background: #F6F8FB;
     border-color: #EBEFF5;
@@ -307,7 +313,8 @@
 #dupScroll, #dupRows,
 #contextMenuScroll, #contextMenuRows,
 #bootTimeScroll, #bootTimeRows,
-#fileLockScroll, #fileLockRows {
+#fileLockScroll, #fileLockRows,
+#restoreScroll, #restoreRows {
     background: transparent;
     border: none;
 }
@@ -316,15 +323,19 @@
 #hwinfoSummary, #processesSummary, #diskUsageSummary, #uninstallSummary,
 #driversSummary, #hostsSummary, #dnsSummary, #monitorSummary,
 #batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
-#fileLockSummary, #sfcSummary, #wupdateSummary {
+#fileLockSummary, #sfcSummary, #wupdateSummary,
+#treemapSummary, #restoreSummary {
     color: #4A576F;
     font-size: 13px;
 }
-#sfcSummary[state="ok"], #wupdateSummary[state="ok"] {
+#sfcSummary[state="ok"], #wupdateSummary[state="ok"], #restoreSummary[state="ok"] {
     color: #1F8A4C;
 }
-#sfcSummary[state="risk"], #wupdateSummary[state="risk"] {
+#sfcSummary[state="risk"], #wupdateSummary[state="risk"], #restoreSummary[state="risk"] {
     color: #C0392B;
+}
+#restoreSummary[state="warn"] {
+    color: #B7791F;
 }
 
 /* 行内小标签 */
@@ -698,6 +709,91 @@
     selection-color: #FFFFFF;
 }
 
+/* ---------------- 目录空间树图 ---------------- */
+#treemapPath {
+    color: #5A677D;
+    font-size: 12px;
+}
+#treemapHint {
+    color: #8795AB;
+    font-size: 12px;
+}
+
+#treemapUpBtn, #treemapPickBtn {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 8px;
+    color: #4A576F;
+    font-size: 12px;
+    padding: 0 12px;
+}
+#treemapUpBtn:hover, #treemapPickBtn:hover {
+    background: #F5F8FE;
+    border-color: #B9CDF0;
+    color: #2B6CD4;
+}
+#treemapUpBtn:pressed, #treemapPickBtn:pressed {
+    background: #EAF1FC;
+}
+#treemapUpBtn:disabled, #treemapPickBtn:disabled {
+    color: #B6BFCC;
+}
+
+/* ---------------- 系统还原点 ---------------- */
+#restoreCreateBtn {
+    background: #2F6FDE;
+    border: 1px solid #2F6FDE;
+    border-radius: 9px;
+    color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 0 18px;
+}
+#restoreCreateBtn:hover {
+    background: #2860C8;
+    border-color: #2860C8;
+}
+#restoreCreateBtn:disabled {
+    background: #E7ECF4;
+    border-color: #E7ECF4;
+    color: #B6BFCC;
+}
+
+#restoreOpenBtn {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 9px;
+    color: #4A576F;
+    font-size: 13px;
+    padding: 0 16px;
+}
+#restoreOpenBtn:hover {
+    background: #F5F8FE;
+    border-color: #B9CDF0;
+    color: #2B6CD4;
+}
+#restoreOpenBtn:pressed {
+    background: #EAF1FC;
+}
+
+#restoreBadge {
+    background: #EEF3FB;
+    border-radius: 8px;
+    color: #3A66B0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 6px;
+}
+#restoreName {
+    color: #1E2A3B;
+    font-size: 13px;
+    font-weight: 600;
+}
+#restoreDetail {
+    color: #7A879B;
+    font-size: 12px;
+}
+
 /* ---------------- 日志控制台 ---------------- */
 #logPanel {
     background: #101725;
@@ -736,6 +832,62 @@
     background: #222C3D;
     border-color: #3A4860;
     color: #C6D2E4;
+}
+
+#bgTaskButton {
+    background: transparent;
+    border: 1px solid #3A5A8C;
+    border-radius: 6px;
+    color: #7FA8E0;
+    font-size: 11px;
+    padding: 3px 12px;
+}
+#bgTaskButton:hover {
+    background: #1D2E4A;
+    border-color: #4C76B4;
+    color: #CFE1FA;
+}
+
+/* ---------------- 后台任务窗口 ---------------- */
+#bgDialog {
+    background: #FFFFFF;
+}
+#bgHint {
+    color: #7A879B;
+    font-size: 12px;
+}
+#bgEmpty {
+    color: #93A0B4;
+    font-size: 13px;
+}
+#bgTaskName {
+    color: #1E2A3B;
+    font-size: 13px;
+    font-weight: 600;
+}
+#bgCancelBtn {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 7px;
+    color: #C0392B;
+    font-size: 12px;
+    padding: 4px 12px;
+}
+#bgCancelBtn:hover {
+    background: #FDF1EF;
+    border-color: #E9B3AB;
+}
+#bgCloseBtn {
+    background: #2F6FDE;
+    border: 1px solid #2F6FDE;
+    border-radius: 7px;
+    color: #FFFFFF;
+    font-size: 12px;
+    padding: 5px 18px;
+}
+#bgCloseBtn:hover {
+    background: #2860C8;
+    border-color: #2860C8;
 }
 
 QTextBrowser#textBrowser {

@@ -224,6 +224,23 @@ def window_origin(hwnd):
     return rect.left, rect.top
 
 
+def bring_to_front(hwnd):
+    """
+    把窗口临时置顶再切换到前台。
+
+    自动化环境里 SetForegroundWindow 常被系统的前台锁定拦下，
+    导致模拟点击落到别的窗口上；先设 TOPMOST 可以保证坐标点击
+    一定命中被测窗口。
+    """
+    user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0003)  # TOPMOST|NOMOVE|NOSIZE
+    user32.SetForegroundWindow(hwnd)
+    time.sleep(0.3)
+
+
+def release_topmost(hwnd):
+    user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0003)  # NOTOPMOST
+
+
 def click_tile(hwnd, key):
     """按磁贴名点击（自动按窗口实际尺寸换算坐标）"""
     move_window_to_origin(hwnd)
@@ -233,13 +250,13 @@ def click_tile(hwnd, key):
     sx = (rect.right - rect.left) / 1136.0
     sy = (rect.bottom - rect.top) / 799.0
     tx, ty = TILES[key]
-    user32.SetForegroundWindow(hwnd)
-    time.sleep(0.4)
+    bring_to_front(hwnd)
     user32.SetCursorPos(ox + int(tx * sx), oy + int(ty * sy))
     time.sleep(0.3)
     user32.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN
     time.sleep(0.08)
     user32.mouse_event(0x0004, 0, 0, 0, 0)  # LEFTUP
+    release_topmost(hwnd)
 
 
 def click_nav(hwnd, label):
@@ -252,15 +269,16 @@ def click_nav(hwnd, label):
     ny = NAV_Y.get(label)
     if ny is None:
         return False
-    user32.SetForegroundWindow(hwnd)
-    time.sleep(0.4)
+    bring_to_front(hwnd)
     user32.SetCursorPos(ox + 118, oy + int(ny * sy))
     time.sleep(0.3)
     user32.mouse_event(0x0002, 0, 0, 0, 0)
     time.sleep(0.08)
     user32.mouse_event(0x0004, 0, 0, 0, 0)
+    release_topmost(hwnd)
     time.sleep(0.8)
     return True
+
 
 
 def test_log_output(exe, shot_dir):
@@ -355,6 +373,9 @@ def test_task_switch(exe):
         for key in ("auto", "info", "auto", "ports"):
             click_tile(hwnd, key)
             time.sleep(0.4)
+            # 上一个任务没结束时，后续点击会弹出并发询问框；按默认项
+            # （放到后台并继续）关闭它，避免模态框挡住后面的点击
+            dismiss_prompt(proc.pid)
         time.sleep(6)
 
         bad = [t for t in visible_titles(proc.pid) if "失败" in t or "错误" in t]
@@ -365,6 +386,233 @@ def test_task_switch(exe):
             proc.terminate()
             try:
                 proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+
+
+def press_enter(hwnd):
+    """向窗口发送回车（用于选择对话框的默认按钮）"""
+    bring_to_front(hwnd)
+    user32.keybd_event(0x0D, 0, 0, 0)
+    time.sleep(0.06)
+    user32.keybd_event(0x0D, 0, 2, 0)
+    time.sleep(0.4)
+    release_topmost(hwnd)
+
+
+# 并发询问框（任务未结束时点了另一个功能）与后台任务窗口的标题
+PROMPT_TITLE = "还有任务正在运行"
+BG_TITLE = "后台任务"
+
+
+def dismiss_prompt(pid, timeout=1.5):
+    """若并发询问框已弹出，按默认项「放到后台并继续」关闭它"""
+    dlg = find_window(PROMPT_TITLE, timeout, pid=pid)
+    if dlg:
+        press_enter(dlg)
+    return dlg
+
+
+def _uia_click_script(pid, automation_suffix):
+    return (
+        "Add-Type -AssemblyName UIAutomationClient;"
+        "Add-Type -AssemblyName UIAutomationTypes;"
+        "$r=[System.Windows.Automation.AutomationElement]::RootElement;"
+        "$pc=New-Object System.Windows.Automation.PropertyCondition("
+        "[System.Windows.Automation.AutomationElement]::ProcessIdProperty,"
+        + str(pid) + ");"
+        "$wins=$r.FindAll([System.Windows.Automation.TreeScope]::Children,$pc);"
+        "foreach($w in $wins){"
+        "$els=$w.FindAll([System.Windows.Automation.TreeScope]::Descendants,"
+        "[System.Windows.Automation.Condition]::TrueCondition);"
+        "foreach($e in $els){"
+        "if($e.Current.AutomationId -like '*" + automation_suffix + "'){"
+        "try{$p=$e.GetCurrentPattern("
+        "[System.Windows.Automation.InvokePattern]::Pattern);$p.Invoke();"
+        "Write-Output ('OK:'+$e.Current.AutomationId);exit 0}catch{}"
+        "try{$p=$e.GetCurrentPattern("
+        "[System.Windows.Automation.SelectionItemPattern]::Pattern);$p.Select();"
+        "Write-Output ('OK:'+$e.Current.AutomationId);exit 0}catch{}"
+        "try{$p=$e.GetCurrentPattern("
+        "[System.Windows.Automation.TogglePattern]::Pattern);$p.Toggle();"
+        "Write-Output ('OK:'+$e.Current.AutomationId);exit 0}catch{}"
+        "Write-Output ('NOPATTERN:'+$e.Current.AutomationId);exit 1 } } };"
+        "Write-Output 'MISS'"
+    )
+
+
+def uia_click(pid, automation_suffix):
+    """
+    用 UI Automation 点击指定进程里 AutomationId 以 suffix 结尾的控件。
+
+    走 UIA 而不是模拟鼠标，控件不必在前台。依次尝试 Invoke /
+    SelectionItem / Toggle，兼容 QToolButton 与可勾选的导航按钮。
+    """
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             _uia_click_script(pid, automation_suffix)],
+            capture_output=True, text=True, timeout=40)
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)
+    return "OK:" in r.stdout, (r.stdout + r.stderr).strip()
+
+
+def uia_click_async(pid, automation_suffix):
+    """
+    异步触发会弹模态框的按钮。
+
+    UIA 的 Invoke 是同步的：被点按钮若打开模态对话框，调用方会一直
+    阻塞到对话框关闭。这里用独立进程触发，测试脚本可以继续操作对话框。
+    """
+    return subprocess.Popen(
+        ["powershell", "-NoProfile", "-Command",
+         _uia_click_script(pid, automation_suffix)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def uia_exists(pid, automation_suffix):
+    """UIA 中是否存在 AutomationId 以 suffix 结尾的控件"""
+    script = (
+        "Add-Type -AssemblyName UIAutomationClient;"
+        "Add-Type -AssemblyName UIAutomationTypes;"
+        "$r=[System.Windows.Automation.AutomationElement]::RootElement;"
+        "$pc=New-Object System.Windows.Automation.PropertyCondition("
+        "[System.Windows.Automation.AutomationElement]::ProcessIdProperty,"
+        + str(pid) + ");"
+        "$wins=$r.FindAll([System.Windows.Automation.TreeScope]::Children,$pc);"
+        "foreach($w in $wins){"
+        "$els=$w.FindAll([System.Windows.Automation.TreeScope]::Descendants,"
+        "[System.Windows.Automation.Condition]::TrueCondition);"
+        "foreach($e in $els){"
+        "if($e.Current.AutomationId -like '*" + automation_suffix + "'){"
+        "Write-Output 'FOUND'; exit 0 } } };"
+        "Write-Output 'MISS'"
+    )
+    r = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                       capture_output=True, text=True, timeout=40)
+    return "FOUND" in r.stdout
+
+
+def _uia_name_script(pid, name_text, action):
+    """
+    生成按 Name（可见文本）匹配控件的 PowerShell 脚本。
+
+    Qt 只给 .ui 里的控件生成 AutomationId，代码里动态创建的
+    按钮 id 为空，所以后台任务窗口只能用 Name 定位。中文文案
+    经 Base64 传入，脚本本身保持纯 ASCII。
+    """
+    import base64
+    b64 = base64.b64encode(name_text.encode("utf-8")).decode("ascii")
+    if action == "click":
+        body = (
+            "try{$p=$e.GetCurrentPattern("
+            "[System.Windows.Automation.InvokePattern]::Pattern);$p.Invoke();"
+            "Write-Output ('OK:'+$e.Current.Name);exit 0}catch{}"
+            "Write-Output 'NOPATTERN';exit 1"
+        )
+    else:
+        body = "Write-Output ('FOUND:'+$e.Current.Name);exit 0"
+    return (
+        "Add-Type -AssemblyName UIAutomationClient;"
+        "Add-Type -AssemblyName UIAutomationTypes;"
+        "$name=[Text.Encoding]::UTF8.GetString("
+        "[Convert]::FromBase64String('" + b64 + "'));"
+        "$r=[System.Windows.Automation.AutomationElement]::RootElement;"
+        "$pc=New-Object System.Windows.Automation.PropertyCondition("
+        "[System.Windows.Automation.AutomationElement]::ProcessIdProperty,"
+        + str(pid) + ");"
+        "$wins=$r.FindAll([System.Windows.Automation.TreeScope]::Children,$pc);"
+        "foreach($w in $wins){"
+        "$els=$w.FindAll([System.Windows.Automation.TreeScope]::Descendants,"
+        "[System.Windows.Automation.Condition]::TrueCondition);"
+        "foreach($e in $els){"
+        "if($e.Current.Name -eq $name){" + body + "} } };"
+        "Write-Output 'MISS'"
+    )
+
+
+def uia_click_name(pid, name_text):
+    """按控件可见文本点击（用于运行时动态创建的按钮）"""
+    script = _uia_name_script(pid, name_text, "click")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                           capture_output=True, text=True, timeout=40)
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)
+    return "OK:" in r.stdout, (r.stdout + r.stderr).strip()
+
+
+def uia_exists_name(pid, name_text):
+    """按控件可见文本判断是否存在"""
+    script = _uia_name_script(pid, name_text, "exists")
+    r = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                       capture_output=True, text=True, timeout=40)
+    return "FOUND" in r.stdout
+
+
+def test_task_concurrency(exe, shot_dir):
+    """测试4：长任务运行中再点另一个功能 → 询问框 → 后台任务窗口 → 取消"""
+    print("\n[测试4] 任务并发：询问 / 后台任务 / 取消")
+    proc = subprocess.Popen([exe], cwd=os.path.dirname(exe))
+    try:
+        hwnd = find_app_window(proc)
+        if not hwnd:
+            check("启动并显示主窗口", False, "未找到窗口")
+            return
+        time.sleep(2)
+
+        # 在「实用工具」页启动 C 盘空间图（扫描 C:\，耗时足够长）
+        switched, detail = uia_click(proc.pid, "navToolsBtn")
+        check("切到实用工具页", switched, detail)
+        time.sleep(0.5)
+        started, detail = uia_click(proc.pid, "btn_treemap")
+        check("启动长时间任务（C 盘空间图）", started, detail)
+        time.sleep(1.0)
+
+        # 切回网络页点「查端口占用」→ 应弹出并发询问框
+        switched, _ = uia_click(proc.pid, "navNetworkBtn")
+        time.sleep(0.5)
+        check("切回网络页", switched)
+        uia_click_async(proc.pid, "btn_ports")
+        time.sleep(1.0)
+
+        dlg = find_window(PROMPT_TITLE, timeout=8, pid=proc.pid)
+        check("弹出「终止 / 后台运行」询问框", dlg is not None)
+        if dlg:
+            shot = os.path.join(shot_dir, "uitest_concurrency_prompt.png")
+            if capture(dlg, shot):
+                check("保存询问框截图", True, shot)
+            press_enter(dlg)  # 默认按钮 = 放到后台并继续
+            time.sleep(0.8)
+
+            bg = find_window(BG_TITLE, timeout=8, pid=proc.pid)
+            check("后台任务窗口出现", bg is not None)
+            if bg:
+                shot = os.path.join(shot_dir, "uitest_background.png")
+                if capture(bg, shot):
+                    check("保存后台任务截图", True, shot)
+
+            check("日志栏出现「后台任务 1」入口",
+                  uia_exists_name(proc.pid, "后台任务 1"))
+
+            time.sleep(0.4)
+            check("后台任务列表里有可取消的任务",
+                  uia_exists_name(proc.pid, "取消"))
+
+            cancelled, detail = uia_click_name(proc.pid, "取消")
+            check("点击「取消」终止后台任务", cancelled, detail)
+            time.sleep(1.0)
+            check("取消后列表已清空",
+                  uia_exists_name(proc.pid, "目前没有后台任务。"),
+                  "未找到空列表提示")
+
+        check("进程未崩溃", proc.poll() is None, f"exit={proc.poll()}")
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=8)
             except Exception:
                 proc.kill()
 
@@ -386,6 +634,7 @@ def main():
     test_log_output(exe, shot_dir)
     test_close_while_running(exe)
     test_task_switch(exe)
+    test_task_concurrency(exe, shot_dir)
 
     print(f"\n===== 结果: {passed} passed, {failed} failed =====")
     return 0 if failed == 0 else 1
