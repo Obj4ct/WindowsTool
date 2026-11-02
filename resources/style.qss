@@ -1,6 +1,7 @@
 /* ============================================================
-   WindowsTool 主题
-   三区结构：深色导航侧栏 + 浅色卡片内容区 + 深色控制台
+   WindowsTool 主题（重构版）
+   左侧深色导航 + 右侧浅色内容区
+   主色：#2F6FDE   背景：#F2F5FA   卡片：#FFFFFF
    ============================================================ */
 
 * {
@@ -8,88 +9,99 @@
 }
 
 /* ---------------- 根容器 ---------------- */
-#centralwidget {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                stop:0 #F6F8FC, stop:1 #EDF1F8);
-}
-
-/* ---------------- 顶栏 ---------------- */
-#headerFrame {
-    background: #FFFFFF;
-    border-bottom: 1px solid #E6EAF1;
-}
-
-#appTitle {
-    color: #16202E;
-    font-size: 17px;
-    font-weight: 600;
-}
-
-#appSubtitle {
-    color: #93A0B4;
-    font-size: 12px;
-}
-
-#aboutButton {
-    background: #F3F6FB;
-    border: 1px solid #E2E8F2;
-    border-radius: 8px;
-    color: #4A576F;
-    font-size: 13px;
-    padding: 7px 18px;
-}
-#aboutButton:hover {
-    background: #E9F0FC;
-    border-color: #CBD9F2;
-    color: #2B6CD4;
-}
-#aboutButton:pressed {
-    background: #DEE8FA;
+#centralwidget, #contentArea, #stackedWidget {
+    background: #F2F5FA;
+    border: none;
 }
 
 /* ---------------- 侧边导航 ---------------- */
 #sidebarFrame {
-    background: #151D2E;
-    border-right: 1px solid #0D1422;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #12203A, stop:1 #0B1526);
+    border-right: 1px solid #0A1220;
+}
+
+#appTitle {
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#appSubtitle {
+    color: #8296B5;
+    font-size: 11px;
 }
 
 #sideSection {
-    color: #5C6A84;
+    color: #5C7191;
     font-size: 11px;
     font-weight: 600;
-    padding: 6px 12px;
+    padding: 8px 14px 4px 14px;
 }
 
 #sideVersion {
-    color: #47536B;
+    color: #4E6484;
     font-size: 11px;
-    padding: 0 12px;
+    padding: 2px 14px 0 14px;
+}
+
+#aboutButton {
+    background: transparent;
+    border: 1px solid #22314C;
+    border-radius: 9px;
+    color: #93A7C4;
+    font-size: 12px;
+}
+#aboutButton:hover {
+    background: #192840;
+    border-color: #33496B;
+    color: #E2EBF9;
+}
+#aboutButton:pressed {
+    background: #14223A;
 }
 
 #navOverviewBtn, #navNetworkBtn, #navSystemBtn,
 #navHardwareBtn, #navManageBtn, #navToolsBtn {
     background: transparent;
     border: none;
-    border-left: 3px solid transparent;
-    border-radius: 0;
-    color: #93A0B8;
+    border-radius: 10px;
+    color: #9BABC2;
     font-size: 14px;
-    padding: 11px 14px;
+    padding: 10px 14px;
     text-align: left;
 }
 #navOverviewBtn:hover, #navNetworkBtn:hover, #navSystemBtn:hover,
 #navHardwareBtn:hover, #navManageBtn:hover, #navToolsBtn:hover {
-    background: #1D2739;
-    color: #DCE4F0;
+    background: #182740;
+    color: #E6EEFB;
 }
 #navOverviewBtn:checked, #navNetworkBtn:checked, #navSystemBtn:checked,
 #navHardwareBtn:checked, #navManageBtn:checked, #navToolsBtn:checked {
-    background: #1F2B40;
-    border-left: 3px solid #4A8CFF;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #2E68D6, stop:1 #2A5FC7);
     color: #FFFFFF;
 }
+#navOverviewBtn:checked:hover, #navNetworkBtn:checked:hover, #navSystemBtn:checked:hover,
+#navHardwareBtn:checked:hover, #navManageBtn:checked:hover, #navToolsBtn:checked:hover {
+    background: #3A76E4;
+}
 
-/* ---------------- 内容卡片 ---------------- */
+/* ---------------- 页面标题 ---------------- */
+#pageTitleOverview, #pageTitleNetwork, #pageTitleSystem,
+#pageTitleHardware, #pageTitleManage, #pageTitleTools {
+    color: #16202E;
+    font-size: 21px;
+    font-weight: 600;
+}
+
+#pageDescOverview, #pageDescNetwork, #pageDescSystem,
+#pageDescHardware, #pageDescManage, #pageDescTools {
+    color: #8795AB;
+    font-size: 12px;
+}
+
+/* ---------------- 内容页 ---------------- */
 #pageOverview, #pageOverviewInner, #pageNetwork, #pageNetworkInner,
 #pageSystem, #pageSystemInner, #pageHardware, #pageHardwareInner,
 #pageManage, #pageManageInner, #pageTools, #pageToolsInner {
@@ -97,116 +109,106 @@
     border: none;
 }
 
-#cardNetwork, #cardAdvanced, #cardOverview, #cardOverviewScore, #cardOverviewRecent,
-#cardSystem, #cardHealth, #cardHardware, #cardManage, #cardTools,
-#cardStartup, #cardPorts, #cardLargeFiles, #cardDiskHealth, #cardHwinfo,
-#cardProcesses, #cardDiskUsage, #cardUninstall, #cardDrivers, #cardHosts,
-#cardDns, #cardMonitor, #cardShortcuts, #cardBattery, #cardDup,
-#cardContextMenu, #cardBootTime, #cardFileLock, #cardSfc, #cardWUpdate {
+#cardOverview, #cardOverviewScore, #cardNetwork, #cardAdvanced,
+#cardPorts, #cardHosts, #cardDns, #cardSystem, #cardHealth,
+#cardSfc, #cardWUpdate, #cardHardware, #cardHwinfo, #cardDiskHealth,
+#cardMonitor, #cardBattery, #cardManage, #cardStartup, #cardProcesses,
+#cardUninstall, #cardDrivers, #cardTools, #cardLargeFiles,
+#cardDiskUsage, #cardDup, #cardContextMenu, #cardBootTime, #cardFileLock {
     background: #FFFFFF;
-    border: 1px solid #E6EAF2;
-    border-radius: 16px;
+    border: 1px solid #E7ECF4;
+    border-radius: 14px;
 }
 
-#cardTitleOverview, #cardTitleScore, #cardTitleRecent, #cardTitleNet, #cardTitleAdv,
+/* 健康评分卡片做成浅蓝提示条，和普通卡片区分 */
+#cardOverviewScore {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                stop:0 #EEF5FF, stop:1 #E3EEFF);
+    border: 1px solid #D7E5FC;
+}
+
+#cardTitleOverview, #cardTitleScore, #cardTitleNet, #cardTitleAdv,
 #cardTitleSys, #cardTitleHardware, #cardTitleManage, #cardTitleTools,
-#healthTitle, #startupTitle, #portsTitle, #largeFilesTitle, #diskHealthTitle,
-#hwinfoTitle, #processesTitle, #diskUsageTitle, #uninstallTitle, #driversTitle,
-#hostsTitle, #dnsTitle, #monitorTitle, #batteryTitle, #dupTitle, #cardTitleTool,
-#contextMenuTitle, #bootTimeTitle, #fileLockTitle, #sfcTitle, #wupdateTitle {
-    color: #1B2637;
+#healthTitle, #portsTitle, #hostsTitle, #dnsTitle, #sfcTitle, #wupdateTitle,
+#hwinfoTitle, #diskHealthTitle, #monitorTitle, #batteryTitle,
+#startupTitle, #processesTitle, #uninstallTitle, #driversTitle,
+#largeFilesTitle, #diskUsageTitle, #dupTitle,
+#contextMenuTitle, #bootTimeTitle, #fileLockTitle {
+    color: #1A2433;
     font-size: 15px;
     font-weight: 600;
 }
 
-#cardHintOverview, #cardHintScore, #cardHintRecent, #cardHintNet, #cardHintAdv,
-#cardHintSys, #cardHintHardware, #cardHintManage, #cardHintTools, #cardHintTool {
-    color: #96A2B6;
+#cardHintOverview, #cardHintScore, #cardHintNet, #cardHintAdv,
+#cardHintSys, #cardHintHardware, #cardHintManage, #cardHintTools {
+    color: #93A0B4;
     font-size: 12px;
 }
 
 /* ---------------- 功能磁贴 ---------------- */
-/* 只列出可用功能；规划中的磁贴不进 ID 选择器，交给下面的 [placeholder] 灰色样式 */
 #btn_quickHealth, #btn_quickNetwork, #btn_quickPorts, #btn_quickDisk,
-#btn_autoCheck, #btn_showNetWork, #btn_netWorkTest, #btn_ports,
-#btn_hosts, #btn_dns,
+#btn_autoCheck, #btn_showNetWork, #btn_ports, #btn_hosts, #btn_dns,
 #btn_cleaner, #btn_fixWhite, #btn_healthCheck, #btn_sfc, #btn_wupdate,
-#btn_diskHealth, #btn_hwinfo, #btn_monitor, #btn_startup, #btn_process, #btn_uninstall,
-#btn_drivers, #btn_largeFiles, #btn_treedisk, #btn_prt, #btn_dup,
-#btn_contextMenu, #btn_bootTime, #btn_fileLock {
-    background: #FFFFFF;
-    border: 1px solid #E3E8F1;
-    border-radius: 14px;
-    color: #1E2A3B;
-    font-size: 14px;
+#btn_diskHealth, #btn_hwinfo, #btn_battery, #btn_monitor,
+#btn_startup, #btn_process, #btn_uninstall, #btn_drivers,
+#btn_largeFiles, #btn_treedisk, #btn_dup, #btn_contextMenu,
+#btn_bootTime, #btn_fileLock {
+    background: #F7F9FD;
+    border: 1px solid #E6ECF6;
+    border-radius: 12px;
+    color: #243042;
+    font-size: 13px;
     font-weight: 600;
-    padding: 20px 8px;
+    padding: 18px 8px 14px 8px;
 }
 #btn_quickHealth:hover, #btn_quickNetwork:hover, #btn_quickPorts:hover, #btn_quickDisk:hover,
-#btn_autoCheck:hover, #btn_showNetWork:hover, #btn_netWorkTest:hover, #btn_ports:hover,
-#btn_hosts:hover, #btn_dns:hover,
+#btn_autoCheck:hover, #btn_showNetWork:hover, #btn_ports:hover, #btn_hosts:hover, #btn_dns:hover,
 #btn_cleaner:hover, #btn_fixWhite:hover, #btn_healthCheck:hover, #btn_sfc:hover, #btn_wupdate:hover,
-#btn_diskHealth:hover, #btn_hwinfo:hover, #btn_monitor:hover, #btn_startup:hover, #btn_process:hover,
-#btn_uninstall:hover, #btn_drivers:hover,
-#btn_largeFiles:hover, #btn_treedisk:hover, #btn_prt:hover, #btn_dup:hover,
-#btn_contextMenu:hover, #btn_bootTime:hover, #btn_fileLock:hover {
-    background: #FAFCFF;
-    border-color: #AEC7F4;
-    color: #1A5FD0;
+#btn_diskHealth:hover, #btn_hwinfo:hover, #btn_battery:hover, #btn_monitor:hover,
+#btn_startup:hover, #btn_process:hover, #btn_uninstall:hover, #btn_drivers:hover,
+#btn_largeFiles:hover, #btn_treedisk:hover, #btn_dup:hover, #btn_contextMenu:hover,
+#btn_bootTime:hover, #btn_fileLock:hover {
+    background: #FFFFFF;
+    border-color: #A9C4F5;
+    color: #1C5FC9;
 }
 #btn_quickHealth:pressed, #btn_quickNetwork:pressed, #btn_quickPorts:pressed, #btn_quickDisk:pressed,
-#btn_autoCheck:pressed, #btn_showNetWork:pressed, #btn_netWorkTest:pressed, #btn_ports:pressed,
-#btn_hosts:pressed, #btn_dns:pressed,
+#btn_autoCheck:pressed, #btn_showNetWork:pressed, #btn_ports:pressed, #btn_hosts:pressed, #btn_dns:pressed,
 #btn_cleaner:pressed, #btn_fixWhite:pressed, #btn_healthCheck:pressed, #btn_sfc:pressed, #btn_wupdate:pressed,
-#btn_diskHealth:pressed, #btn_hwinfo:pressed, #btn_monitor:pressed, #btn_startup:pressed, #btn_process:pressed,
-#btn_uninstall:pressed, #btn_drivers:pressed,
-#btn_largeFiles:pressed, #btn_treedisk:pressed, #btn_prt:pressed, #btn_dup:pressed,
-#btn_contextMenu:pressed, #btn_bootTime:pressed, #btn_fileLock:pressed {
-    background: #EFF4FD;
+#btn_diskHealth:pressed, #btn_hwinfo:pressed, #btn_battery:pressed, #btn_monitor:pressed,
+#btn_startup:pressed, #btn_process:pressed, #btn_uninstall:pressed, #btn_drivers:pressed,
+#btn_largeFiles:pressed, #btn_treedisk:pressed, #btn_dup:pressed, #btn_contextMenu:pressed,
+#btn_bootTime:pressed, #btn_fileLock:pressed {
+    background: #EDF3FD;
     border-color: #8FB4EE;
 }
-#btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_netWorkTest:disabled, #btn_ports:disabled, #btn_hosts:disabled, #btn_dns:disabled,
-#btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled, #btn_sfc:disabled, #btn_wupdate:disabled, #btn_startup:disabled, #btn_hwinfo:disabled, #btn_monitor:disabled, #btn_process:disabled, #btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled, #btn_diskHealth:disabled, #btn_prt:disabled, #btn_dup:disabled, #btn_contextMenu:disabled, #btn_bootTime:disabled, #btn_fileLock:disabled {
-    background: #F7F8FA;
-    border-color: #EAEEF4;
+#btn_quickHealth:disabled, #btn_quickNetwork:disabled, #btn_quickPorts:disabled, #btn_quickDisk:disabled,
+#btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_ports:disabled, #btn_hosts:disabled,
+#btn_dns:disabled, #btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled,
+#btn_sfc:disabled, #btn_wupdate:disabled, #btn_diskHealth:disabled, #btn_hwinfo:disabled,
+#btn_battery:disabled, #btn_monitor:disabled, #btn_startup:disabled, #btn_process:disabled,
+#btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled,
+#btn_dup:disabled, #btn_contextMenu:disabled, #btn_bootTime:disabled, #btn_fileLock:disabled {
+    background: #F6F8FB;
+    border-color: #EBEFF5;
     color: #B6BFCC;
 }
 
-/* 规划中功能：磁贴置灰，点击只提示"功能开发中"，不改变任何设置 */
-QToolButton[placeholder="true"] {
-    background: #F6F7F9;
-    border: 1px solid #EBEEF3;
-    border-radius: 14px;
-    color: #A9B3C2;
-    font-size: 14px;
-    font-weight: 600;
-    padding: 20px 8px;
-}
-QToolButton[placeholder="true"]:hover {
-    background: #F2F4F8;
-    border-color: #DDE3EC;
-    color: #8C97A8;
-}
-QToolButton[placeholder="true"]:pressed {
-    background: #ECEEF4;
-    border-color: #D3DAE5;
-}
-
-/* 次级按钮 */
-#btn_refreshDNS, #btn_resetWinSock, #btn_key {
+/* ---------------- 次级按钮 ---------------- */
+#btn_refreshDNS, #btn_resetWinSock {
     background: #FFFFFF;
     border: 1px solid #E1E7F0;
     border-radius: 9px;
     color: #4A576F;
     font-size: 13px;
-    padding: 9px 16px;
+    padding: 0 16px;
 }
-#btn_refreshDNS:hover, #btn_resetWinSock:hover, #btn_key:hover {
+#btn_refreshDNS:hover, #btn_resetWinSock:hover {
     background: #F5F8FE;
     border-color: #B9CDF0;
     color: #2B6CD4;
 }
-#btn_refreshDNS:pressed, #btn_resetWinSock:pressed, #btn_key:pressed {
+#btn_refreshDNS:pressed, #btn_resetWinSock:pressed {
     background: #EAF1FC;
 }
 
@@ -258,7 +260,7 @@ QToolButton[placeholder="true"]:pressed {
 /* ---------------- 健康评分 ---------------- */
 #overviewScoreValue {
     color: #93A0B4;
-    font-size: 34px;
+    font-size: 36px;
     font-weight: 700;
 }
 #overviewScoreValue[state="ok"] {
@@ -292,319 +294,103 @@ QToolButton[placeholder="true"]:pressed {
     color: #C0392B;
 }
 
-/* ---------------- 开机启动项 ---------------- */
-#startupSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#startupScroll, #startupRows {
+/* ---------------- 列表通用 ---------------- */
+#startupScroll, #startupRows,
+#portsScroll, #portsRows,
+#largeFilesScroll, #largeFilesRows,
+#diskHealthScroll, #diskHealthRows,
+#hwinfoScroll, #hwinfoRows,
+#processesScroll, #processesRows,
+#diskUsageScroll, #diskUsageRows,
+#uninstallScroll, #uninstallRows,
+#driversScroll, #driversRows,
+#dupScroll, #dupRows,
+#contextMenuScroll, #contextMenuRows,
+#bootTimeScroll, #bootTimeRows,
+#fileLockScroll, #fileLockRows {
     background: transparent;
     border: none;
 }
 
-#startupSource {
-    background: #EEF3FB;
+#startupSummary, #portsSummary, #largeFilesSummary, #diskHealthSummary,
+#hwinfoSummary, #processesSummary, #diskUsageSummary, #uninstallSummary,
+#driversSummary, #hostsSummary, #dnsSummary, #monitorSummary,
+#batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
+#fileLockSummary, #sfcSummary, #wupdateSummary {
+    color: #4A576F;
+    font-size: 13px;
+}
+#sfcSummary[state="ok"], #wupdateSummary[state="ok"] {
+    color: #1F8A4C;
+}
+#sfcSummary[state="risk"], #wupdateSummary[state="risk"] {
+    color: #C0392B;
+}
+
+/* 行内小标签 */
+#startupSource, #portBadge, #largeFileSize, #hwBadge,
+#cmBadge, #bootBadge, #lockBadge, #dupBadge, #procBadge,
+#usageBadge, #appBadge {
     border-radius: 8px;
-    color: #3A66B0;
     font-size: 11px;
     font-weight: 600;
-    padding: 3px 6px;
+    padding: 3px 7px;
 }
 
-#startupName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#startupCommand {
-    color: #7A879B;
-    font-size: 12px;
-}
-
-/* ---------------- 端口占用 ---------------- */
-#portsSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#portsScroll, #portsRows {
-    background: transparent;
-    border: none;
-}
-
-#portBadge {
+#startupSource, #portBadge, #largeFileSize, #hwBadge,
+#cmBadge, #bootBadge, #lockBadge, #dupBadge {
     background: #EEF3FB;
-    border-radius: 8px;
     color: #3A66B0;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 6px;
 }
-
-#portName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
+#procBadge {
+    background: #EEF1F6;
+    color: #5B6980;
 }
-
-#portDetail {
-    color: #7A879B;
-    font-size: 12px;
+#usageBadge {
+    background: #EAF5EF;
+    color: #2E7D5B;
 }
-
-/* ---------------- 大文件扫描 ---------------- */
-#largeFilesSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
+#appBadge {
+    background: #F3EEF9;
+    color: #7A56C2;
 }
-
-#largeFilesScroll, #largeFilesRows {
-    background: transparent;
-    border: none;
-}
-
-#largeFileSize {
-    background: #EEF3FB;
-    border-radius: 8px;
-    color: #3A66B0;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 6px;
-}
-
-#largeFileName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#largeFilePath {
-    color: #7A879B;
-    font-size: 12px;
-}
-
-/* ---------------- 磁盘健康 ---------------- */
-#diskHealthSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#diskHealthScroll, #diskHealthRows {
-    background: transparent;
-    border: none;
-}
-
 #diskBadge {
     background: #E8F6EE;
     border-radius: 8px;
     color: #2E8B57;
     font-size: 11px;
     font-weight: 600;
-    padding: 3px 6px;
+    padding: 3px 7px;
 }
-
 #diskBadge[state="warn"] {
     background: #FFF4E5;
     color: #C77700;
 }
-
 #diskBadge[state="bad"] {
     background: #FDECEC;
     color: #C0392B;
 }
+#lockBadge[state="bad"] {
+    background: #FDECEC;
+    color: #C0392B;
+}
 
-#diskName {
+/* 行内主标题 / 副标题 */
+#startupName, #portName, #largeFileName, #diskName, #hwName,
+#healthName, #procName, #usageName, #appName, #driverName,
+#dupName, #cmName, #bootName, #lockName {
     color: #1E2A3B;
     font-size: 13px;
     font-weight: 600;
 }
-
-#diskDetail {
-    color: #7A879B;
-    font-size: 12px;
-}
-
-/* ---------------- 硬件信息 ---------------- */
-#hwinfoSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#hwinfoScroll, #hwinfoRows {
-    background: transparent;
-    border: none;
-}
-
-#hwBadge {
-    background: #E8F0FE;
-    border-radius: 8px;
-    color: #2B6CD4;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 6px;
-}
-
-#hwName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#hwDetail {
-    color: #7A879B;
-    font-size: 12px;
-}
-
-/* ---------------- 进程列表 ---------------- */
-#processesSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#processesScroll, #processesRows {
-    background: transparent;
-    border: none;
-}
-
-#procBadge {
-    background: #EEF1F6;
-    border-radius: 8px;
-    color: #5B6980;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 6px;
-}
-
-#procName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#procDetail {
-    color: #7A879B;
-    font-size: 12px;
-}
-
-/* ---------------- 目录占用 ---------------- */
-#diskUsageSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#diskUsageScroll, #diskUsageRows {
-    background: transparent;
-    border: none;
-}
-
-#usageBadge {
-    background: #EEF6F1;
-    border-radius: 8px;
-    color: #2E7D5B;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 6px;
-}
-
-#usageName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#usageDetail {
-    color: #7A879B;
-    font-size: 12px;
-}
-
-/* ---------------- 已安装程序 ---------------- */
-#uninstallSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#uninstallScroll, #uninstallRows {
-    background: transparent;
-    border: none;
-}
-
-#appBadge {
-    background: #F3EEF9;
-    border-radius: 8px;
-    color: #7A56C2;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 6px;
-}
-
-#appName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#appDetail {
-    color: #7A879B;
-    font-size: 12px;
-}
-
-#appUninstallBtn {
-    background: #F2F6FE;
-    border: 1px solid #D7E4FA;
-    border-radius: 6px;
-    color: #2B6CD4;
-    font-size: 12px;
-    padding: 0 12px;
-}
-
-#appUninstallBtn:hover {
-    background: #E8F0FE;
-}
-
-#appUninstallBtn:pressed {
-    background: #D9E7FD;
-}
-
-/* ---------------- 驱动清单 ---------------- */
-#driversSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#driversScroll, #driversRows {
-    background: transparent;
-    border: none;
-}
-
-#driverName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#driverDetail {
+#startupCommand, #portDetail, #largeFilePath, #diskDetail, #hwDetail,
+#healthDetail, #procDetail, #usageDetail, #appDetail, #driverDetail,
+#dupDetail, #cmDetail, #bootDetail, #lockDetail {
     color: #7A879B;
     font-size: 12px;
 }
 
 /* ---------------- Hosts 编辑 ---------------- */
-#hostsSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
 #hostsEditor {
     background: #FBFCFE;
     border: 1px solid #E3E8F1;
@@ -614,13 +400,12 @@ QToolButton[placeholder="true"]:pressed {
     font-size: 12px;
     padding: 8px;
 }
-
 #hostsEditor:focus {
-    border-color: #AEC7F4;
+    border-color: #A9C4F5;
 }
 
 #hostsSaveBtn {
-    background: #4A8CFF;
+    background: #2F6FDE;
     border: none;
     border-radius: 8px;
     color: #FFFFFF;
@@ -628,126 +413,95 @@ QToolButton[placeholder="true"]:pressed {
     font-weight: 600;
     padding: 0 18px;
 }
-
 #hostsSaveBtn:hover {
-    background: #3D7BE8;
+    background: #2860C8;
 }
-
 #hostsSaveBtn:disabled {
     background: #C3D4F4;
     color: #F4F7FD;
 }
 
 #hostsRestoreBtn {
-    background: #F2F4F8;
+    background: #F4F6FA;
     border: 1px solid #E1E6EF;
     border-radius: 8px;
     color: #4A576F;
     font-size: 13px;
     padding: 0 16px;
 }
-
 #hostsRestoreBtn:hover {
     background: #EDF1F7;
 }
-
 #hostsRestoreBtn:disabled {
     color: #B6BFCC;
 }
 
 /* ---------------- DNS 切换 ---------------- */
-#dnsSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
 #dnsAutoBtn, #dnsAliBtn, #dnsTencentBtn, #dns114Btn, #dnsGoogleBtn, #dnsBaiduBtn {
-    background: #F2F4F8;
+    background: #F4F6FA;
     border: 1px solid #E1E6EF;
     border-radius: 8px;
     color: #2A3648;
     font-size: 13px;
     padding: 0 14px;
 }
-
 #dnsAutoBtn:hover, #dnsAliBtn:hover, #dnsTencentBtn:hover,
 #dns114Btn:hover, #dnsGoogleBtn:hover, #dnsBaiduBtn:hover {
     background: #EAF1FE;
     border-color: #C3D7F8;
     color: #2B6CD4;
 }
-
 #dnsAutoBtn:pressed, #dnsAliBtn:pressed, #dnsTencentBtn:pressed,
 #dns114Btn:pressed, #dnsGoogleBtn:pressed, #dnsBaiduBtn:pressed {
     background: #E1EAFB;
 }
-
 #dnsAutoBtn:disabled, #dnsAliBtn:disabled, #dnsTencentBtn:disabled,
 #dns114Btn:disabled, #dnsGoogleBtn:disabled, #dnsBaiduBtn:disabled {
     color: #B6BFCC;
 }
 
 /* ---------------- 实时监控 ---------------- */
-#monitorSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
 #monCpuName, #monMemName, #monDiskName, #monNetName {
     color: #5A677D;
     font-size: 13px;
 }
-
 #monCpuVal, #monMemVal, #monDiskVal, #monNetVal {
     color: #2A3648;
     font-size: 13px;
     font-weight: 600;
 }
-
 #monCpuBar, #monMemBar, #monDiskBar {
-    background: #F0F3F8;
+    background: #EEF2F8;
     border: none;
     border-radius: 6px;
 }
-
 #monCpuBar::chunk, #monMemBar::chunk, #monDiskBar::chunk {
-    background: #4A8CFF;
+    background: #2F6FDE;
     border-radius: 6px;
 }
 
 #monitorStopBtn {
-    background: #F2F4F8;
+    background: #F4F6FA;
     border: 1px solid #E1E6EF;
     border-radius: 8px;
     color: #4A576F;
     font-size: 13px;
     padding: 0 16px;
 }
-
 #monitorStopBtn:hover {
     background: #EDF1F7;
 }
-
 #monitorStopBtn:disabled {
     color: #B6BFCC;
 }
 
 /* ---------------- 电池健康 ---------------- */
-#batterySummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
 #batteryNameLabel, #batteryDesignLabel, #batteryFullLabel,
 #batteryHealthLabel, #batteryChargeLabel, #batteryStatusLabel,
 #batteryCycleLabel {
     color: #5A677D;
     font-size: 13px;
 }
-
 #batteryNameVal, #batteryDesignVal, #batteryFullVal,
 #batteryHealthVal, #batteryChargeVal, #batteryStatusVal,
 #batteryCycleVal {
@@ -756,95 +510,39 @@ QToolButton[placeholder="true"]:pressed {
     font-weight: 600;
 }
 
-/* ---------------- 重复文件 ---------------- */
-#dupSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#dupScroll, #dupRows {
-    background: transparent;
-}
-
-#dupBadge {
-    background: #E8F0FE;
+/* ---------------- 软件 / 驱动 / 重复文件操作按钮 ---------------- */
+#appUninstallBtn {
+    background: #F2F6FE;
+    border: 1px solid #D7E4FA;
     border-radius: 6px;
     color: #2B6CD4;
     font-size: 12px;
-    font-weight: 600;
-    padding: 2px 4px;
+    padding: 0 12px;
 }
-
-#dupName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
+#appUninstallBtn:hover {
+    background: #E8F0FE;
 }
-
-#dupDetail {
-    color: #7A879B;
-    font-size: 12px;
+#appUninstallBtn:pressed {
+    background: #D9E7FD;
 }
 
 #dupDeleteBtn {
-    background: #F2F4F8;
+    background: #F4F6FA;
     border: 1px solid #E1E6EF;
     border-radius: 8px;
     color: #4A576F;
     font-size: 13px;
     padding: 0 16px;
 }
-
 #dupDeleteBtn:hover {
     background: #EDF1F7;
 }
-
 #dupDeleteBtn:disabled {
     color: #B6BFCC;
 }
 
-/* ---------------- 右键菜单管理 ---------------- */
-#contextMenuSummary, #bootTimeSummary, #fileLockSummary {
-    color: #4A576F;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#contextMenuScroll, #contextMenuRows,
-#bootTimeScroll, #bootTimeRows,
-#fileLockScroll, #fileLockRows {
-    background: transparent;
-    border: none;
-}
-
-#cmBadge, #bootBadge, #lockBadge {
-    background: #EEF3FB;
-    border-radius: 8px;
-    color: #3A66B0;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 3px 6px;
-}
-
-#lockBadge[state="bad"] {
-    background: #FDECEC;
-    color: #C0392B;
-}
-
-#cmName, #bootName, #lockName {
-    color: #1E2A3B;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-#cmDetail, #bootDetail, #lockDetail {
-    color: #7A879B;
-    font-size: 12px;
-}
-
 #cmToggleBtn {
-    background: #F2F4F8;
+    background: #F4F6FA;
     border: 1px solid #E1E6EF;
     border-radius: 8px;
     color: #4A576F;
@@ -870,39 +568,37 @@ QToolButton[placeholder="true"]:pressed {
     padding: 7px 10px;
 }
 #fileLockPath:focus {
-    border-color: #AEC7F4;
+    border-color: #A9C4F5;
 }
-
 #fileLockBrowseBtn {
     background: #FFFFFF;
     border: 1px solid #E1E7F0;
     border-radius: 9px;
     color: #4A576F;
     font-size: 13px;
-    padding: 7px 14px;
+    padding: 0 14px;
 }
 #fileLockBrowseBtn:hover {
     background: #F5F8FE;
     border-color: #B9CDF0;
     color: #2B6CD4;
 }
-
 #fileLockCheckBtn {
-    background: #4A8CFF;
-    border: 1px solid #4A8CFF;
+    background: #2F6FDE;
+    border: 1px solid #2F6FDE;
     border-radius: 9px;
     color: #FFFFFF;
     font-size: 13px;
     font-weight: 600;
-    padding: 7px 18px;
+    padding: 0 18px;
 }
 #fileLockCheckBtn:hover {
-    background: #2B6CD4;
-    border-color: #2B6CD4;
+    background: #2860C8;
+    border-color: #2860C8;
 }
 #fileLockCheckBtn:pressed {
-    background: #245BB8;
-    border-color: #245BB8;
+    background: #2453AE;
+    border-color: #2453AE;
 }
 #fileLockCheckBtn:disabled {
     background: #E7ECF4;
@@ -910,21 +606,10 @@ QToolButton[placeholder="true"]:pressed {
     color: #B6BFCC;
 }
 
-/* ---------------- 系统文件修复（SFC / DISM） ---------------- */
-#sfcSummary, #wupdateSummary {
-    color: #4A576F;
-    font-size: 13px;
-}
-#sfcSummary[state="ok"], #wupdateSummary[state="ok"] {
-    color: #1F8A4C;
-}
-#sfcSummary[state="risk"], #wupdateSummary[state="risk"] {
-    color: #C0392B;
-}
-
+/* ---------------- 系统文件修复 / Windows 更新修复 ---------------- */
 #btnSfcScan, #btnWUpdateFix {
-    background: #4A8CFF;
-    border: 1px solid #4A8CFF;
+    background: #2F6FDE;
+    border: 1px solid #2F6FDE;
     border-radius: 9px;
     color: #FFFFFF;
     font-size: 13px;
@@ -932,12 +617,12 @@ QToolButton[placeholder="true"]:pressed {
     padding: 0 18px;
 }
 #btnSfcScan:hover, #btnWUpdateFix:hover {
-    background: #2B6CD4;
-    border-color: #2B6CD4;
+    background: #2860C8;
+    border-color: #2860C8;
 }
 #btnSfcScan:pressed, #btnWUpdateFix:pressed {
-    background: #245BB8;
-    border-color: #245BB8;
+    background: #2453AE;
+    border-color: #2453AE;
 }
 
 #btnDismRepair {
@@ -981,20 +666,17 @@ QToolButton[placeholder="true"]:pressed {
     border: 1px solid #1D2637;
     border-radius: 12px;
 }
-
 #logHeader {
     background: #18202F;
     border-top-left-radius: 11px;
     border-top-right-radius: 11px;
     border-bottom: 1px solid #222C3D;
 }
-
 #logTitle {
     color: #8FA0B8;
     font-size: 11px;
     font-weight: 600;
 }
-
 #clearLogButton {
     background: transparent;
     border: 1px solid #2C374B;
@@ -1020,18 +702,6 @@ QTextBrowser#textBrowser {
     selection-color: #FFFFFF;
 }
 
-/* 快捷键页的内容视图 */
-QTextBrowser#shortcutView {
-    background: #FBFCFE;
-    border: 1px solid #EDF0F6;
-    border-radius: 10px;
-    color: #3A4658;
-    font-size: 13px;
-    padding: 6px 10px;
-    selection-background-color: #CFE0FB;
-    selection-color: #16202E;
-}
-
 /* ---------------- 滚动条 ---------------- */
 QScrollBar:vertical {
     background: transparent;
@@ -1039,12 +709,12 @@ QScrollBar:vertical {
     margin: 2px 2px 2px 0;
 }
 QScrollBar::handle:vertical {
-    background: #C6CEDC;
+    background: #C4CDDC;
     border-radius: 5px;
     min-height: 32px;
 }
 QScrollBar::handle:vertical:hover {
-    background: #A8B3C4;
+    background: #A6B2C4;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0;
@@ -1060,12 +730,12 @@ QScrollBar:horizontal {
     margin: 0 2px 2px 2px;
 }
 QScrollBar::handle:horizontal {
-    background: #C6CEDC;
+    background: #C4CDDC;
     border-radius: 5px;
     min-width: 32px;
 }
 QScrollBar::handle:horizontal:hover {
-    background: #A8B3C4;
+    background: #A6B2C4;
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     height: 0;
@@ -1075,7 +745,6 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
     background: transparent;
 }
 
-/* 控制台内滚动条用深色 */
 #textBrowser QScrollBar::handle:vertical {
     background: #33415A;
 }

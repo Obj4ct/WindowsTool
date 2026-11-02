@@ -285,7 +285,6 @@ MainWindow::MainWindow(QWidget *parent)
     setupAbout();
     setupNavigation();
     setupOverview();
-    setupPlaceholders();
     setupNetwork();
     setupSystem();
     setupTools();
@@ -342,9 +341,9 @@ void MainWindow::setupTheme()
 {
     applyStyleSheet(*qApp);
 
-    // 顶栏品牌徽章
+    // 侧栏品牌标识
     ui->logoLabel->setPixmap(
-        UiIcons::makeBadge(UiIcons::Icon::Logo, cBadgeBg, cAccent, 38, 10));
+        UiIcons::makeBadge(UiIcons::Icon::Logo, cBadgeBg, cAccent, 40, 11));
 
     // 侧边导航图标（选中/悬停时变亮，用 QIcon 的多态实现）
     auto navIcon = [](UiIcons::Icon icon) {
@@ -376,10 +375,6 @@ void MainWindow::setupTheme()
         ico.addPixmap(UiIcons::render(icon, cAccentDark, 30), QIcon::Active, QIcon::Off);
         return ico;
     };
-    // 规划中功能的磁贴用灰色图标，与可用功能区分
-    auto grayIcon = [](UiIcons::Icon icon) {
-        return UiIcons::make(icon, QColor("#AEB8C8"), 30);
-    };
 
     // 概览页快捷入口
     ui->btn_quickHealth->setIcon(tileIcon(UiIcons::Icon::Health));
@@ -390,7 +385,6 @@ void MainWindow::setupTheme()
     // 网络
     ui->btn_autoCheck->setIcon(tileIcon(UiIcons::Icon::ShieldCheck));
     ui->btn_showNetWork->setIcon(tileIcon(UiIcons::Icon::Info));
-    ui->btn_netWorkTest->setIcon(tileIcon(UiIcons::Icon::Activity));
     ui->btn_ports->setIcon(tileIcon(UiIcons::Icon::Link));
     ui->btn_hosts->setIcon(tileIcon(UiIcons::Icon::Link));
     ui->btn_dns->setIcon(tileIcon(UiIcons::Icon::Network));
@@ -401,7 +395,6 @@ void MainWindow::setupTheme()
     ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
     ui->btn_sfc->setIcon(tileIcon(UiIcons::Icon::ShieldCheck));
     ui->btn_wupdate->setIcon(tileIcon(UiIcons::Icon::Refresh));
-    ui->btn_bsod->setIcon(grayIcon(UiIcons::Icon::Info));
 
     // 硬件监控
     ui->btn_diskHealth->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
@@ -427,11 +420,11 @@ void MainWindow::setupTheme()
     for (QToolButton *b : {ui->btn_quickHealth, ui->btn_quickNetwork,
                             ui->btn_quickPorts, ui->btn_quickDisk,
                             ui->btn_autoCheck, ui->btn_showNetWork,
-                            ui->btn_netWorkTest, ui->btn_ports,
+                            ui->btn_ports,
                             ui->btn_hosts, ui->btn_dns,
                             ui->btn_cleaner, ui->btn_fixWhite,
                             ui->btn_healthCheck, ui->btn_sfc,
-                            ui->btn_wupdate, ui->btn_bsod,
+                            ui->btn_wupdate,
                             ui->btn_diskHealth, ui->btn_hwinfo,
                             ui->btn_battery, ui->btn_monitor,
                             ui->btn_startup, ui->btn_process,
@@ -614,28 +607,6 @@ void MainWindow::setupOverview()
     });
 }
 
-// ---------------------------------------------------------------- 规划中功能
-
-void MainWindow::wirePlaceholderTile(QToolButton *tile, const QString &title,
-                                     const QString &detail)
-{
-    tile->setProperty("placeholder", true);
-
-    connect(tile, &QAbstractButton::clicked, this, [this, title, detail]() {
-        showMessage("功能开发中",
-                    title + "\n\n" + detail
-                        + "\n\n该功能仍在规划中，上线后会在这里提供入口。");
-    });
-}
-
-void MainWindow::setupPlaceholders()
-{
-    wirePlaceholderTile(ui->btn_bsod,
-                        "蓝屏分析",
-                        "将读取最近一次崩溃的转储文件，定位可能引发蓝屏的"
-                        "驱动或硬件，并给出处理建议。");
-}
-
 // ---------------------------------------------------------------- 网络模块
 
 void MainWindow::setupNetwork()
@@ -650,10 +621,10 @@ void MainWindow::setupNetwork()
 
     // 刷新 DNS
     connect(ui->btn_refreshDNS, &QPushButton::clicked, this, [this]() {
-        if (!confirmAction("刷新网络配置",
-                           "此操作会把承载默认路由的物理网卡恢复为自动获取 DNS，"
-                           "并清除本机 DNS 解析缓存；静态 IP 配置与 VPN/虚拟网卡不会被改动。"
-                           "执行前会自动备份当前网络配置。\n\n执行期间网络可能短暂不可用，是否继续？"))
+        if (!confirmAction("刷新网络设置",
+                           "会把你正在用的网卡改回「自动获取 DNS」，并清空本机的 DNS 缓存。"
+                           "原来的设置会先自动备份，静态 IP、VPN 和虚拟网卡都不会被改动。\n\n"
+                           "操作期间可能短暂上不了网，继续吗？"))
             return;
 
         ++m_flow;
@@ -665,10 +636,9 @@ void MainWindow::setupNetwork()
 
     // 刷新 winsock
     connect(ui->btn_resetWinSock, &QPushButton::clicked, this, [this]() {
-        if (!confirmAction("重置 Winsock",
-                           "此操作将重新初始化 Winsock 套接字目录，用于修复因软件冲突或"
-                           "安全软件残留导致的网络协议异常。\n\n"
-                           "注意：重置后部分网络性能可能下降，且需要重启计算机才能完全生效。\n\n"
+        if (!confirmAction("重置网络组件",
+                           "网页打不开、提示网络协议出错时，重置网络组件往往能修好。\n\n"
+                           "重置后需要重启电脑才能完全生效，重启前网络可能暂时不可用。"
                            "是否继续？"))
             return;
 
@@ -683,19 +653,9 @@ void MainWindow::setupNetwork()
         ++m_flow;
 
         clearLog();
-        appendLog("正在重置 Winsock，请稍候……");
+        appendLog("正在重置网络组件，请稍候……");
         m_task = Task::WinsockReset;
         m_runner->runBat("winsockReset.bat");
-    });
-
-    // 网络测试
-    connect(ui->btn_netWorkTest, &QAbstractButton::clicked, this, [this]() {
-        ++m_flow;
-
-        clearLog();
-        appendLog("正在测试网络连通性……");
-        m_task = Task::PingTest;
-        m_runner->runCommand(QStringLiteral("ping www.baidu.com"));
     });
 
     // 端口占用查询（只读）
@@ -747,9 +707,6 @@ void MainWindow::onTaskFinished(int exitCode)
     case Task::PingAutoCheck:
         handleAutoCheckPing();
         break;
-    case Task::PingTest:
-        handlePingTest();
-        break;
     case Task::DnsCheck:
         handleDnsCheck();
         break;
@@ -758,10 +715,10 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::FixDnsManual:
         appendLog("-------------------");
-        appendLog("网络配置刷新完成");
-        showMessage("网络配置已刷新",
-                    "已把默认路由网卡的 DNS 恢复为自动获取，并清空本机 DNS 解析缓存。\n\n"
-                    "若仍无法上网，请尝试重启计算机。");
+        appendLog("网络设置已刷新");
+        showMessage("网络设置已刷新",
+                    "已经把 DNS 改回「自动获取」，并清空了本机的 DNS 缓存。\n\n"
+                    "如果还是上不了网，重启电脑后再试一次。");
         break;
     case Task::Cleaner:
         appendLog("-------------------");
@@ -770,9 +727,9 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::WinsockReset:
         appendLog("-------------------");
-        appendLog("Winsock 重置完成，请重启计算机后生效");
-        showMessage("Winsock 已重置",
-                    "套接字目录已重新初始化，需要重启计算机后才能完全生效。");
+        appendLog("网络组件已重置，重启电脑后生效");
+        showMessage("网络组件已重置",
+                    "网络组件已经重新初始化，重启电脑后才会完全生效。");
         break;
     case Task::FixWhite:
         appendLog("-------------------");
@@ -931,11 +888,11 @@ void MainWindow::handleAutoCheckPing()
 
     if (isPingTimeout(output)) {
         appendLog("-------------------");
-        appendLog("网站请求超时，请检查你的网络网络是否连接！并确保在电脑设置中关闭了代理");
-        showMessage("网络连接异常",
-                    "检测到目标网站请求超时。\n\n"
-                    "建议先确认网络已连接，并在系统设置中关闭代理后重试，"
-                    "也可以点「刷新网络配置」重置 DNS。",
+        appendLog("网站请求超时，请检查网络是否连接、是否开着代理");
+        showMessage("网络连不上",
+                    "打开百度超时了。\n\n"
+                    "请先确认电脑已经连上网络，并关掉系统里的代理设置后再试一次，"
+                    "也可以点「刷新网络设置」重置 DNS。",
                     QMessageBox::Warning);
         return;
     }
@@ -950,31 +907,6 @@ void MainWindow::handleAutoCheckPing()
         m_task = Task::DnsCheck;
         m_runner->runBat("dnsCheck.bat");
     });
-}
-
-void MainWindow::handlePingTest()
-{
-    const QString output = m_runner->collectedOutput();
-
-    if (isPingTimeout(output)) {
-        showMessage("连接超时",
-                    "在规定时间内未收到目标主机的响应。\n\n"
-                    "可能原因：网络尚未连接、目标站点不可达，或存在代理/防火墙拦截。\n\n"
-                    "建议使用「自动检测并修复」定位具体故障环节。",
-                    QMessageBox::Critical);
-        return;
-    }
-
-    if (isPingHostUnknown(output)) {
-        showMessage("域名解析失败",
-                    "无法将目标域名解析为 IP 地址。\n\n"
-                    "可能原因：DNS 服务器不可用，或 DNS 配置有误。\n\n"
-                    "建议使用「刷新网络配置」重置 DNS 设置。",
-                    QMessageBox::Critical);
-        return;
-    }
-
-    showMessage("连通性正常", "目标主机响应正常，网络连通性测试已通过。");
 }
 
 void MainWindow::handleDnsCheck()
@@ -1043,9 +975,9 @@ void MainWindow::askNetworkRecovered()
         appendLog("验证通过，网络已恢复正常。");
     } else {
         showMessage("问题仍未解决",
-                    "网络配置已重置，但访问仍不正常。\n\n"
-                    "可能是运营商侧故障、代理配置异常，或被安全软件拦截。\n\n"
-                    "可通过右上角「关于」获取联系方式以获取进一步支持。");
+                    "网络设置已经重置，但网页还是打不开。\n\n"
+                    "可能是宽带运营商那边出了故障，也可能是代理或安全软件拦住了。\n\n"
+                    "可以点左下角「关于本程序」查看联系方式，进一步求助。");
         appendLog("验证未通过，请检查代理设置或联系技术支持。");
     }
 }
@@ -3417,9 +3349,9 @@ void MainWindow::addAppRow(const QString &size, const QString &name,
 void MainWindow::runUninstall(const QString &key, const QString &name)
 {
     if (!confirmAction(QStringLiteral("确认卸载"),
-                       QStringLiteral("将启动「%1」自带的卸载程序。\n\n"
-                                      "卸载由系统或软件厂商的向导完成，过程中可能需要管理员权限；"
-                                      "若弹出权限提示请选择“是”。")
+                       QStringLiteral("会打开「%1」自带的卸载程序。\n\n"
+                                      "跟着卸载窗口一路点「下一步」就行；"
+                                      "中途可能弹出权限提示，选「是」即可。")
                            .arg(name),
                        QMessageBox::Question))
         return;
@@ -4059,8 +3991,8 @@ void MainWindow::handleDnsRead()
 void MainWindow::applyDns(const QString &servers, const QString &label)
 {
     if (m_dnsAlias.isEmpty()) {
-        showMessage("请先读取当前配置",
-                    "还没有获取到承载默认路由的网卡，请先点击「DNS 切换」磁贴读取一次。",
+        showMessage("请先读取当前设置",
+                    "还没读到现在的 DNS 设置，先点一下「换 DNS」磁贴，读完再选。",
                     QMessageBox::Information);
         return;
     }
@@ -4238,14 +4170,13 @@ void MainWindow::runSfcRepair(const QString &mode)
     const bool dism = (mode == QLatin1String("dism"));
 
     QString text = dism
-        ? QStringLiteral("将调用 DISM 修复系统映像（组件存储），"
-                         "用于解决系统组件损坏导致的功能异常。")
-        : QStringLiteral("将调用 SFC 扫描全部受保护的系统文件，"
-                         "并用系统缓存中的正确版本替换损坏的文件。");
-    text += QStringLiteral("\n\n整个过程可能需要 10-30 分钟，期间电脑会明显变慢，"
+        ? QStringLiteral("会检查系统组件有没有损坏，并把坏掉的部分换成正常版本，"
+                         "适合系统功能异常、程序频繁报错的情况。")
+        : QStringLiteral("会扫描 Windows 的核心系统文件，发现损坏就自动换成正确的版本。");
+    text += QStringLiteral("\n\n整个过程可能要 10-30 分钟，期间电脑会明显变慢，"
                            "请不要关闭本程序。\n\n"
-                           "开始时会弹出管理员权限请求，请选择「是」。\n\n"
-                           "是否继续？");
+                           "开始时会弹出管理员权限请求，请选「是」。\n\n"
+                           "继续吗？");
 
     if (!confirmAction(dism ? "修复系统映像" : "扫描并修复系统文件", text))
         return;
@@ -4365,9 +4296,9 @@ void MainWindow::handleSfcRepair(int exitCode)
         appendLog("-------------------");
         appendLog(QStringLiteral("%1 未成功完成，退出码：%2").arg(command).arg(exitCode));
         showMessage(dism ? "系统映像修复未完成" : "系统文件修复未完成",
-                    QStringLiteral("%1 的退出码为 %2。\n\n"
-                                   "若刚刚取消了管理员权限请求，重新点击按钮并在弹窗中选择"
-                                   "「是」即可。").arg(command).arg(exitCode),
+                    QStringLiteral("%1 没有正常结束（错误码 %2）。\n\n"
+                                   "如果是刚才取消了管理员权限提示，重新点一下按钮，"
+                                   "在弹窗里选「是」就行。").arg(command).arg(exitCode),
                     QMessageBox::Warning);
     }
 
@@ -4399,15 +4330,13 @@ void MainWindow::runWUpdateFix()
     }
 
     if (!confirmAction(
-            "重置 Windows 更新组件",
-            QStringLiteral("将停止 Windows Update 相关服务，把 SoftwareDistribution 与 "
-                           "catroot2 缓存目录重命名为带时间戳的 .bak 备份，"
-                           "然后重新启动这些服务。\n\n"
-                           "旧目录不会被删除，需要时可手动改回原文件名恢复。\n"
-                           "执行期间 Windows 更新暂时不可用，浏览器上网不受影响，"
-                           "整个过程约需 1-3 分钟。\n\n"
-                           "开始时会弹出管理员权限请求，请选择「是」。\n\n"
-                           "是否继续？")))
+            "重置 Windows 更新",
+            QStringLiteral("会把 Windows 更新用到的缓存清空，相当于让更新重新开始，"
+                           "专门解决「更新总是失败、卡在某个进度」的问题。\n\n"
+                           "旧的缓存不会直接删掉，而是改名备份，需要时可以改回去。\n"
+                           "过程中更新功能暂时用不了，正常上网不受影响，大约需要 1-3 分钟。\n\n"
+                           "开始时会弹出管理员权限请求，请选「是」。\n\n"
+                           "继续吗？")))
         return;
 
     ++m_flow;
@@ -4879,7 +4808,8 @@ void MainWindow::handleContextMenuToggle()
         ui->contextMenuSummary->setText(QStringLiteral("操作失败"));
         showMessage("修改右键菜单失败",
                     "系统返回：" + object.value(QStringLiteral("message")).toString()
-                        + "\n\n带「系统」标记的项位于 HKLM，需要以管理员身份运行本程序后才能修改。",
+                        + "\n\n标记为「系统」的项目要管理员权限才能改，"
+                          "请右键用「以管理员身份运行」重新打开本程序。",
                     QMessageBox::Warning);
         return;
     }

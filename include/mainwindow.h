@@ -36,7 +36,6 @@ private:
     enum class Task {
         None,
         PingAutoCheck,   ///< 自动检测流程中的 ping
-        PingTest,        ///< 用户点击"网络测试"的 ping
         DnsCheck,        ///< DNS 解析检查
         FixDnsAuto,      ///< 自动检测触发的修复，完成后询问用户
         FixDnsManual,    ///< 用户手动刷新网络配置，完成后仅记录日志
@@ -74,17 +73,12 @@ private:
     void setupAbout();
     void setupNavigation();
     void setupOverview();
-    void setupPlaceholders();
     void setupNetwork();
     void setupSystem();
     void setupTools();
 
-    /** 切换功能页（0 概览 / 1 网络 / 2 系统维护 / 3 硬件监控 / 4 系统管理 / 5 实用工具） */
+    /** 切换功能页（0 概览 / 1 网络 / 2 系统维护 / 3 硬件信息 / 4 软件管理 / 5 实用工具） */
     void showPage(int index);
-
-    /** 把规划中的磁贴置灰，点击只提示"功能开发中" */
-    void wirePlaceholderTile(QToolButton *tile, const QString &title,
-                             const QString &detail);
 
     // 异步任务分发
     void onTaskFinished(int exitCode);
@@ -93,7 +87,6 @@ private:
     // 网络检测流程（异步串联）
     void startAutoCheck();
     void handleAutoCheckPing();
-    void handlePingTest();
     void handleDnsCheck();
     void handleNetworkInfo();
     void runFixDns(bool askAfter);

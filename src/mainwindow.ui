@@ -6,14 +6,14 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>980</width>
-    <height>720</height>
+    <width>1120</width>
+    <height>760</height>
    </rect>
   </property>
   <property name="minimumSize">
    <size>
-    <width>900</width>
-    <height>640</height>
+    <width>980</width>
+    <height>660</height>
    </size>
   </property>
   <property name="windowTitle">
@@ -36,108 +36,6 @@
     <property name="bottomMargin">
      <number>0</number>
     </property>
-    <item>
-     <widget class="QFrame" name="headerFrame">
-      <property name="frameShape">
-       <enum>QFrame::NoFrame</enum>
-      </property>
-      <layout class="QHBoxLayout" name="headerLayout">
-       <property name="spacing">
-        <number>12</number>
-       </property>
-       <property name="leftMargin">
-        <number>20</number>
-       </property>
-       <property name="topMargin">
-        <number>14</number>
-       </property>
-       <property name="rightMargin">
-        <number>20</number>
-       </property>
-       <property name="bottomMargin">
-        <number>14</number>
-       </property>
-       <item>
-        <widget class="QLabel" name="logoLabel">
-         <property name="minimumSize">
-          <size>
-           <width>38</width>
-           <height>38</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>38</width>
-           <height>38</height>
-          </size>
-         </property>
-         <property name="text">
-          <string />
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QVBoxLayout" name="headerTextLayout">
-         <property name="spacing">
-          <number>1</number>
-         </property>
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <item>
-          <widget class="QLabel" name="appTitle">
-           <property name="text">
-            <string>WindowsTool 电脑工具箱</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="appSubtitle">
-           <property name="text">
-            <string>一键检测并修复常见的电脑问题</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <spacer name="headerSpacer">
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>40</width>
-           <height>20</height>
-          </size>
-         </property>
-        </spacer>
-       </item>
-       <item>
-        <widget class="QPushButton" name="aboutButton">
-         <property name="minimumSize">
-          <size>
-           <width>72</width>
-           <height>30</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>关于</string>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-    </item>
     <item>
      <layout class="QHBoxLayout" name="bodyLayout">
       <property name="spacing">
@@ -162,36 +60,107 @@
         </property>
         <property name="minimumSize">
          <size>
-          <width>196</width>
+          <width>236</width>
           <height>0</height>
          </size>
         </property>
         <property name="maximumSize">
          <size>
-          <width>196</width>
+          <width>236</width>
           <height>16777215</height>
          </size>
         </property>
         <layout class="QVBoxLayout" name="sidebarLayout">
          <property name="spacing">
-          <number>3</number>
+          <number>6</number>
          </property>
          <property name="leftMargin">
-          <number>10</number>
-         </property>
-         <property name="topMargin">
           <number>16</number>
          </property>
+         <property name="topMargin">
+          <number>24</number>
+         </property>
          <property name="rightMargin">
-          <number>10</number>
+          <number>16</number>
          </property>
          <property name="bottomMargin">
-          <number>14</number>
+          <number>18</number>
          </property>
+         <item>
+          <layout class="QHBoxLayout" name="brandLayout">
+           <property name="spacing">
+            <number>10</number>
+           </property>
+           <property name="leftMargin">
+            <number>4</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>4</number>
+           </property>
+           <property name="bottomMargin">
+            <number>18</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="logoLabel">
+             <property name="minimumSize">
+              <size>
+               <width>40</width>
+               <height>40</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>40</width>
+               <height>40</height>
+              </size>
+             </property>
+             <property name="text">
+              <string />
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QVBoxLayout" name="brandTextLayout">
+             <property name="spacing">
+              <number>2</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>2</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="appTitle">
+               <property name="text">
+                <string>WindowsTool</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="appSubtitle">
+               <property name="text">
+                <string>电脑工具箱 · 简单好用</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </item>
          <item>
           <widget class="QLabel" name="sideSection">
            <property name="text">
-            <string>功能导航</string>
+            <string>功能</string>
            </property>
           </widget>
          </item>
@@ -223,7 +192,7 @@
             </size>
            </property>
            <property name="text">
-            <string>网络</string>
+            <string>网络问题</string>
            </property>
            <property name="checkable">
             <bool>true</bool>
@@ -261,7 +230,7 @@
             </size>
            </property>
            <property name="text">
-            <string>硬件监控</string>
+            <string>硬件信息</string>
            </property>
            <property name="checkable">
             <bool>true</bool>
@@ -280,7 +249,7 @@
             </size>
            </property>
            <property name="text">
-            <string>系统管理</string>
+            <string>软件管理</string>
            </property>
            <property name="checkable">
             <bool>true</bool>
@@ -323,9 +292,22 @@
           </spacer>
          </item>
          <item>
+          <widget class="QPushButton" name="aboutButton">
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>34</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>关于本程序</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QLabel" name="sideVersion">
            <property name="text">
-            <string>v1.0 · Qt 5</string>
+            <string>版本 1.0</string>
            </property>
           </widget>
          </item>
@@ -339,16 +321,16 @@
           <number>12</number>
          </property>
          <property name="leftMargin">
-          <number>18</number>
+          <number>24</number>
          </property>
          <property name="topMargin">
-          <number>16</number>
+          <number>22</number>
          </property>
          <property name="rightMargin">
-          <number>18</number>
+          <number>24</number>
          </property>
          <property name="bottomMargin">
-          <number>14</number>
+          <number>18</number>
          </property>
          <item>
           <widget class="QStackedWidget" name="stackedWidget">
@@ -389,6 +371,39 @@
                <number>0</number>
               </property>
               <item>
+               <layout class="QVBoxLayout" name="headerOverview">
+                <property name="spacing">
+                 <number>2</number>
+                </property>
+                <property name="leftMargin">
+                 <number>2</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>2</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>2</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="pageTitleOverview">
+                  <property name="text">
+                   <string>电脑概览</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="pageDescOverview">
+                  <property name="text">
+                   <string>一眼看清电脑状态，常用功能一键打开</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
                <widget class="QFrame" name="cardOverview">
                 <property name="frameShape">
                  <enum>QFrame::NoFrame</enum>
@@ -412,14 +427,14 @@
                  <item>
                   <widget class="QLabel" name="cardTitleOverview">
                    <property name="text">
-                    <string>欢迎使用</string>
+                    <string>常用功能</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="cardHintOverview">
                    <property name="text">
-                    <string>常用功能一键直达，左侧导航可进入各功能分组</string>
+                    <string>点一下就能用，更多功能在左边导航里</string>
                    </property>
                   </widget>
                  </item>
@@ -468,7 +483,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>网络诊断</string>
+                      <string>网络检查</string>
                      </property>
                     </widget>
                    </item>
@@ -490,7 +505,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>端口占用</string>
+                      <string>查端口占用</string>
                      </property>
                     </widget>
                    </item>
@@ -512,7 +527,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>磁盘健康</string>
+                      <string>硬盘健康</string>
                      </property>
                     </widget>
                    </item>
@@ -545,14 +560,14 @@
                  <item>
                   <widget class="QLabel" name="cardTitleScore">
                    <property name="text">
-                    <string>健康评分</string>
+                    <string>电脑健康评分</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="cardHintScore">
                    <property name="text">
-                    <string>运行体检后自动汇总为 0-100 的健康评分，一眼看清电脑整体状态</string>
+                    <string>体检后会自动打分（0-100 分），一眼看懂电脑状态</string>
                    </property>
                    <property name="wordWrap">
                     <bool>true</bool>
@@ -574,7 +589,7 @@
                    <item>
                     <widget class="QLabel" name="overviewScoreGrade">
                      <property name="text">
-                      <string>尚未体检</string>
+                      <string>还没体检</string>
                      </property>
                      <property name="alignment">
                       <set>Qt::AlignLeading|Qt::AlignVCenter</set>
@@ -595,47 +610,6 @@
                     </spacer>
                    </item>
                   </layout>
-                 </item>
-                </layout>
-               </widget>
-              </item>
-              <item>
-               <widget class="QFrame" name="cardOverviewRecent">
-                <property name="frameShape">
-                 <enum>QFrame::NoFrame</enum>
-                </property>
-                <layout class="QVBoxLayout" name="overviewRecentLayout">
-                 <property name="spacing">
-                  <number>6</number>
-                 </property>
-                 <property name="leftMargin">
-                  <number>18</number>
-                 </property>
-                 <property name="topMargin">
-                  <number>14</number>
-                 </property>
-                 <property name="rightMargin">
-                  <number>18</number>
-                 </property>
-                 <property name="bottomMargin">
-                  <number>14</number>
-                 </property>
-                 <item>
-                  <widget class="QLabel" name="cardTitleRecent">
-                   <property name="text">
-                    <string>最近操作</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QLabel" name="cardHintRecent">
-                   <property name="text">
-                    <string>记录最近执行的功能与结果，便于回溯排查（开发中）</string>
-                   </property>
-                   <property name="wordWrap">
-                    <bool>true</bool>
-                   </property>
-                  </widget>
                  </item>
                 </layout>
                </widget>
@@ -684,6 +658,39 @@
                <number>0</number>
               </property>
               <item>
+               <layout class="QVBoxLayout" name="headerNetwork">
+                <property name="spacing">
+                 <number>2</number>
+                </property>
+                <property name="leftMargin">
+                 <number>2</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>2</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>2</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="pageTitleNetwork">
+                  <property name="text">
+                   <string>网络问题</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="pageDescNetwork">
+                  <property name="text">
+                   <string>上不了网、网速慢？先点一下自动检测</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
                <widget class="QFrame" name="cardNetwork">
                 <property name="frameShape">
                  <enum>QFrame::NoFrame</enum>
@@ -707,14 +714,14 @@
                  <item>
                   <widget class="QLabel" name="cardTitleNet">
                    <property name="text">
-                    <string>网络诊断</string>
+                    <string>网络工具</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="cardHintNet">
                    <property name="text">
-                    <string>一键体检网络，必要时自动修复 DNS 配置，查看端口占用</string>
+                    <string>先点「一键检测修复」，它会自动检查网络并尝试修好</string>
                    </property>
                   </widget>
                  </item>
@@ -744,7 +751,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>自动检测并修复</string>
+                      <string>一键检测修复</string>
                      </property>
                     </widget>
                    </item>
@@ -766,33 +773,11 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>查看网络信息</string>
+                      <string>看网络信息</string>
                      </property>
                     </widget>
                    </item>
                    <item row="0" column="2">
-                    <widget class="QToolButton" name="btn_netWorkTest">
-                     <property name="sizePolicy">
-                      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                       <horstretch>1</horstretch>
-                       <verstretch>0</verstretch>
-                      </sizepolicy>
-                     </property>
-                     <property name="minimumSize">
-                      <size>
-                       <width>0</width>
-                       <height>92</height>
-                      </size>
-                     </property>
-                     <property name="toolButtonStyle">
-                      <enum>Qt::ToolButtonTextUnderIcon</enum>
-                     </property>
-                     <property name="text">
-                      <string>网络测试</string>
-                     </property>
-                    </widget>
-                   </item>
-                   <item row="1" column="0">
                     <widget class="QToolButton" name="btn_ports">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -810,11 +795,11 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>端口占用查询</string>
+                      <string>查端口占用</string>
                      </property>
                     </widget>
                    </item>
-                   <item row="1" column="1">
+                   <item row="1" column="0">
                     <widget class="QToolButton" name="btn_hosts">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -832,11 +817,11 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>Hosts 文件</string>
+                      <string>Hosts 设置</string>
                      </property>
                     </widget>
                    </item>
-                   <item row="1" column="2">
+                   <item row="1" column="1">
                     <widget class="QToolButton" name="btn_dns">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -854,7 +839,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>DNS 切换</string>
+                      <string>换 DNS</string>
                      </property>
                     </widget>
                    </item>
@@ -887,14 +872,14 @@
                  <item>
                   <widget class="QLabel" name="cardTitleAdv">
                    <property name="text">
-                    <string>高级选项</string>
+                    <string>还是不行？再试这些</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="cardHintAdv">
                    <property name="text">
-                    <string>处理更棘手的网络问题，操作前请确认已了解影响</string>
+                    <string>会改动网络设置，操作前请先看清说明</string>
                    </property>
                   </widget>
                  </item>
@@ -909,7 +894,7 @@
                       <number>36</number>
                      </property>
                      <property name="text">
-                      <string>刷新网络配置</string>
+                      <string>刷新网络设置</string>
                      </property>
                     </widget>
                    </item>
@@ -919,7 +904,7 @@
                       <number>36</number>
                      </property>
                      <property name="text">
-                      <string>重置 WinSock</string>
+                      <string>重置网络组件</string>
                      </property>
                     </widget>
                    </item>
@@ -968,7 +953,7 @@
                  <item>
                   <widget class="QLabel" name="portsTitle">
                    <property name="text">
-                    <string>端口占用</string>
+                    <string>端口占用情况</string>
                    </property>
                   </widget>
                  </item>
@@ -1165,7 +1150,7 @@
                  <item>
                   <widget class="QLabel" name="dnsTitle">
                    <property name="text">
-                    <string>DNS 设置</string>
+                    <string>DNS 服务器</string>
                    </property>
                   </widget>
                  </item>
@@ -1324,6 +1309,39 @@
                <number>0</number>
               </property>
               <item>
+               <layout class="QVBoxLayout" name="headerSystem">
+                <property name="spacing">
+                 <number>2</number>
+                </property>
+                <property name="leftMargin">
+                 <number>2</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>2</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>2</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="pageTitleSystem">
+                  <property name="text">
+                   <string>系统维护</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="pageDescSystem">
+                  <property name="text">
+                   <string>清理垃圾、修复系统问题，让电脑更稳定</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
                <widget class="QFrame" name="cardSystem">
                 <property name="frameShape">
                  <enum>QFrame::NoFrame</enum>
@@ -1347,14 +1365,14 @@
                  <item>
                   <widget class="QLabel" name="cardTitleSys">
                    <property name="text">
-                    <string>系统维护</string>
+                    <string>常用维护</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="cardHintSys">
                    <property name="text">
-                    <string>一键体检系统状态，清理临时文件、修复系统组件与桌面图标显示异常</string>
+                    <string>清理垃圾、修复系统问题，让电脑更稳定</string>
                    </property>
                   </widget>
                  </item>
@@ -1403,7 +1421,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>修复桌面图标变白</string>
+                      <string>图标变白修复</string>
                      </property>
                     </widget>
                    </item>
@@ -1454,7 +1472,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>系统文件修复</string>
+                      <string>修复系统文件</string>
                      </property>
                     </widget>
                    </item>
@@ -1476,31 +1494,22 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>Windows 更新修复</string>
+                      <string>修复 Windows 更新</string>
                      </property>
                     </widget>
                    </item>
                    <item>
-                    <widget class="QToolButton" name="btn_bsod">
-                     <property name="sizePolicy">
-                      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-                       <horstretch>1</horstretch>
-                       <verstretch>0</verstretch>
-                      </sizepolicy>
+                    <spacer name="sysExtraSpacer">
+                     <property name="orientation">
+                      <enum>Qt::Horizontal</enum>
                      </property>
-                     <property name="minimumSize">
+                     <property name="sizeHint" stdset="0">
                       <size>
-                       <width>0</width>
-                       <height>92</height>
+                       <width>40</width>
+                       <height>20</height>
                       </size>
                      </property>
-                     <property name="toolButtonStyle">
-                      <enum>Qt::ToolButtonTextUnderIcon</enum>
-                     </property>
-                     <property name="text">
-                      <string>蓝屏分析</string>
-                     </property>
-                    </widget>
+                    </spacer>
                    </item>
                   </layout>
                  </item>
@@ -1599,14 +1608,14 @@
                  <item>
                   <widget class="QLabel" name="sfcTitle">
                    <property name="text">
-                    <string>系统文件修复（SFC / DISM）</string>
+                    <string>修复系统文件</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="sfcSummary">
                    <property name="text">
-                    <string>尚未运行修复。SFC 扫描并替换损坏的系统文件；DISM 修复用于恢复系统映像的组件存储。两者都需要管理员权限，且可能需要较长时间，建议在空闲时执行。</string>
+                    <string>电脑经常报错、程序打不开？可以先扫描并修复损坏的系统文件。耗时较长，建议不忙的时候做。</string>
                    </property>
                    <property name="wordWrap">
                     <bool>true</bool>
@@ -1627,7 +1636,7 @@
                       </size>
                      </property>
                      <property name="text">
-                      <string>扫描并修复（SFC）</string>
+                      <string>开始扫描修复</string>
                      </property>
                     </widget>
                    </item>
@@ -1640,7 +1649,7 @@
                       </size>
                      </property>
                      <property name="text">
-                      <string>修复系统映像（DISM）</string>
+                      <string>修复系统映像</string>
                      </property>
                     </widget>
                    </item>
@@ -1708,14 +1717,14 @@
                  <item>
                   <widget class="QLabel" name="wupdateTitle">
                    <property name="text">
-                    <string>Windows 更新修复</string>
+                    <string>修复 Windows 更新</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="wupdateSummary">
                    <property name="text">
-                    <string>当 Windows 更新卡住、反复失败或「检查更新」报错时，可重置更新组件：停止更新相关服务，把 SoftwareDistribution 与 catroot2 缓存目录重命名为带时间戳的 .bak 备份，再重新启动服务。旧目录不会删除，需要时可手动改回原名恢复。</string>
+                    <string>更新总是失败、卡住不动？重置一下更新组件。原来的缓存会改名备份，不会直接删除。</string>
                    </property>
                    <property name="wordWrap">
                     <bool>true</bool>
@@ -1821,6 +1830,39 @@
                <number>0</number>
               </property>
               <item>
+               <layout class="QVBoxLayout" name="headerHardware">
+                <property name="spacing">
+                 <number>2</number>
+                </property>
+                <property name="leftMargin">
+                 <number>2</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>2</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>2</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="pageTitleHardware">
+                  <property name="text">
+                   <string>硬件信息</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="pageDescHardware">
+                  <property name="text">
+                   <string>查看电脑配置、硬盘和电池状态</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
                <widget class="QFrame" name="cardHardware">
                 <property name="frameShape">
                  <enum>QFrame::NoFrame</enum>
@@ -1844,14 +1886,14 @@
                  <item>
                   <widget class="QLabel" name="cardTitleHardware">
                    <property name="text">
-                    <string>硬件监控</string>
+                    <string>硬件概览</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="cardHintHardware">
                    <property name="text">
-                    <string>查看磁盘健康与硬件信息，及时发现硬件异常</string>
+                    <string>查看硬盘健康、电脑配置和电池状态</string>
                    </property>
                   </widget>
                  </item>
@@ -1890,7 +1932,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>磁盘健康</string>
+                      <string>硬盘健康</string>
                      </property>
                     </widget>
                    </item>
@@ -1912,7 +1954,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>硬件信息</string>
+                      <string>看电脑配置</string>
                      </property>
                     </widget>
                    </item>
@@ -1956,7 +1998,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>实时监控</string>
+                      <string>看实时占用</string>
                      </property>
                     </widget>
                    </item>
@@ -1992,7 +2034,7 @@
                  <item>
                   <widget class="QLabel" name="hwinfoTitle">
                    <property name="text">
-                    <string>硬件信息</string>
+                    <string>电脑配置</string>
                    </property>
                   </widget>
                  </item>
@@ -2736,6 +2778,39 @@
                <number>0</number>
               </property>
               <item>
+               <layout class="QVBoxLayout" name="headerManage">
+                <property name="spacing">
+                 <number>2</number>
+                </property>
+                <property name="leftMargin">
+                 <number>2</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>2</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>2</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="pageTitleManage">
+                  <property name="text">
+                   <string>软件管理</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="pageDescManage">
+                  <property name="text">
+                   <string>管理开机启动项、已装软件和正在运行的程序</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
                <widget class="QFrame" name="cardManage">
                 <property name="frameShape">
                  <enum>QFrame::NoFrame</enum>
@@ -2759,14 +2834,14 @@
                  <item>
                   <widget class="QLabel" name="cardTitleManage">
                    <property name="text">
-                    <string>系统管理</string>
+                    <string>软件与启动项</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="cardHintManage">
                    <property name="text">
-                    <string>管理开机启动项、进程、已装软件与驱动</string>
+                    <string>看看开机都启动了什么，卸载不用的软件</string>
                    </property>
                   </widget>
                  </item>
@@ -2805,7 +2880,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>启动项管理</string>
+                      <string>开机启动项</string>
                      </property>
                     </widget>
                    </item>
@@ -2827,7 +2902,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>进程列表</string>
+                      <string>运行中的程序</string>
                      </property>
                     </widget>
                    </item>
@@ -2849,7 +2924,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>软件卸载</string>
+                      <string>卸载软件</string>
                      </property>
                     </widget>
                    </item>
@@ -2871,7 +2946,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>驱动清单</string>
+                      <string>查看驱动</string>
                      </property>
                     </widget>
                    </item>
@@ -2995,7 +3070,7 @@
                  <item>
                   <widget class="QLabel" name="processesTitle">
                    <property name="text">
-                    <string>进程列表</string>
+                    <string>运行中的程序</string>
                    </property>
                   </widget>
                  </item>
@@ -3171,7 +3246,7 @@
                  <item>
                   <widget class="QLabel" name="driversTitle">
                    <property name="text">
-                    <string>驱动清单</string>
+                    <string>驱动列表</string>
                    </property>
                   </widget>
                  </item>
@@ -3276,6 +3351,39 @@
                <number>0</number>
               </property>
               <item>
+               <layout class="QVBoxLayout" name="headerTools">
+                <property name="spacing">
+                 <number>2</number>
+                </property>
+                <property name="leftMargin">
+                 <number>2</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>2</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>2</number>
+                </property>
+                <item>
+                 <widget class="QLabel" name="pageTitleTools">
+                  <property name="text">
+                   <string>实用工具</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QLabel" name="pageDescTools">
+                  <property name="text">
+                   <string>找出占空间的大文件和重复文件，看看文件被谁占用</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+              <item>
                <widget class="QFrame" name="cardTools">
                 <property name="frameShape">
                  <enum>QFrame::NoFrame</enum>
@@ -3299,14 +3407,14 @@
                  <item>
                   <widget class="QLabel" name="cardTitleTools">
                    <property name="text">
-                    <string>实用工具</string>
+                    <string>文件与系统工具</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="cardHintTools">
                    <property name="text">
-                    <string>扫描大文件、目录占用与重复文件，管理右键菜单、查看开机耗时与文件占用</string>
+                    <string>找出占空间的大文件和重复文件，也能查文件被谁占用</string>
                    </property>
                   </widget>
                  </item>
@@ -3336,7 +3444,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>大文件扫描</string>
+                      <string>找大文件</string>
                      </property>
                     </widget>
                    </item>
@@ -3358,7 +3466,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>目录占用</string>
+                      <string>看文件夹大小</string>
                      </property>
                     </widget>
                    </item>
@@ -3380,7 +3488,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>重复文件</string>
+                      <string>找重复文件</string>
                      </property>
                     </widget>
                    </item>
@@ -3424,7 +3532,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>开机耗时</string>
+                      <string>开机用了多久</string>
                      </property>
                     </widget>
                    </item>
@@ -3446,7 +3554,7 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>文件占用</string>
+                      <string>文件被谁占用</string>
                      </property>
                     </widget>
                    </item>
@@ -3570,7 +3678,7 @@
                  <item>
                   <widget class="QLabel" name="diskUsageTitle">
                    <property name="text">
-                    <string>目录占用</string>
+                    <string>文件夹大小</string>
                    </property>
                   </widget>
                  </item>
@@ -3746,7 +3854,7 @@
                       </size>
                      </property>
                      <property name="text">
-                      <string>删除重复副本</string>
+                      <string>删除多余的副本</string>
                      </property>
                     </widget>
                    </item>
@@ -3782,7 +3890,7 @@
                  <item>
                   <widget class="QLabel" name="contextMenuTitle">
                    <property name="text">
-                    <string>右键菜单管理</string>
+                    <string>右键菜单</string>
                    </property>
                   </widget>
                  </item>
@@ -3870,7 +3978,7 @@
                  <item>
                   <widget class="QLabel" name="bootTimeTitle">
                    <property name="text">
-                    <string>开机耗时分析</string>
+                    <string>开机用了多久</string>
                    </property>
                   </widget>
                  </item>
@@ -3958,14 +4066,14 @@
                  <item>
                   <widget class="QLabel" name="fileLockTitle">
                    <property name="text">
-                    <string>文件占用查询</string>
+                    <string>文件被谁占用</string>
                    </property>
                   </widget>
                  </item>
                  <item>
                   <widget class="QLabel" name="fileLockSummary">
                    <property name="text">
-                    <string>选择一个文件，查看是哪个进程正在占用它</string>
+                    <string>选一个删不掉的文件，看看是哪个程序正在用它</string>
                    </property>
                    <property name="wordWrap">
                     <bool>true</bool>
@@ -3993,7 +4101,7 @@
                       </size>
                      </property>
                      <property name="text">
-                      <string>选择文件</string>
+                      <string>选文件</string>
                      </property>
                     </widget>
                    </item>
@@ -4006,7 +4114,7 @@
                       </size>
                      </property>
                      <property name="text">
-                      <string>查询占用</string>
+                      <string>查一下</string>
                      </property>
                     </widget>
                    </item>

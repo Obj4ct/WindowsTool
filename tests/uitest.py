@@ -85,21 +85,23 @@ def find_app_window(proc, timeout=15.0):
     return find_window(WINDOW_TITLE_ALT, timeout,
                        exclude=EXCLUDE_TITLES, pid=proc.pid)
 
-# 磁贴中心点（基于 996x759 的窗口量取，实际会按窗口尺寸等比换算）
+# 磁贴中心点（基于 1136x799 的窗口外框量取，实际会按窗口尺寸等比换算）
 TILES = {
-    "auto": (352, 238),      # 自动检测并修复
-    "info": (594, 238),      # 查看网络信息
-    "test": (836, 238),      # 网络测试
+    "auto": (415, 236),      # 一键检测修复
+    "info": (685, 236),      # 看网络信息
+    "ports": (955, 236),     # 查端口占用
+    "hosts": (415, 340),     # Hosts 设置
+    "dns": (685, 340),       # 换 DNS
 }
 
-# 侧边导航项的纵向坐标（同样基于 996x759 量取）
+# 侧边导航项的纵向坐标（同样基于 1136x799 量取）
 NAV_Y = {
-    "概览": 168,
-    "网络": 213,
-    "系统维护": 258,
-    "硬件监控": 303,
-    "系统管理": 348,
-    "实用工具": 393,
+    "概览": 175,
+    "网络问题": 223,
+    "系统维护": 271,
+    "硬件信息": 320,
+    "软件管理": 368,
+    "实用工具": 415,
 }
 
 passed = 0
@@ -228,8 +230,8 @@ def click_tile(hwnd, key):
     ox, oy = window_origin(hwnd)
     rect = wt.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
-    sx = (rect.right - rect.left) / 996.0
-    sy = (rect.bottom - rect.top) / 759.0
+    sx = (rect.right - rect.left) / 1136.0
+    sy = (rect.bottom - rect.top) / 799.0
     tx, ty = TILES[key]
     user32.SetForegroundWindow(hwnd)
     time.sleep(0.4)
@@ -246,13 +248,13 @@ def click_nav(hwnd, label):
     ox, oy = window_origin(hwnd)
     rect = wt.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
-    sy = (rect.bottom - rect.top) / 759.0
+    sy = (rect.bottom - rect.top) / 799.0
     ny = NAV_Y.get(label)
     if ny is None:
         return False
     user32.SetForegroundWindow(hwnd)
     time.sleep(0.4)
-    user32.SetCursorPos(ox + 66, oy + int(ny * sy))
+    user32.SetCursorPos(ox + 118, oy + int(ny * sy))
     time.sleep(0.3)
     user32.mouse_event(0x0002, 0, 0, 0, 0)
     time.sleep(0.08)
@@ -273,8 +275,8 @@ def test_log_output(exe, shot_dir):
         check("启动并显示主窗口", True)
         time.sleep(2)
 
-        click_nav(hwnd, "网络")      # 磁贴都在网络页，先切页
-        click_tile(hwnd, "test")   # 网络测试 → ping
+        click_nav(hwnd, "网络问题")      # 磁贴都在网络页，先切页
+        click_tile(hwnd, "auto")   # 一键检测修复 → ping + DNS 检测
         time.sleep(7)
 
         user32.SetCursorPos(2000, 2000)
@@ -309,8 +311,8 @@ def test_close_while_running(exe):
                 check(f"启动（等待 {wait}s）", False, "未找到窗口")
                 continue
             time.sleep(2)
-            click_nav(hwnd, "网络")
-            click_tile(hwnd, "test")   # 启动 ping，让子进程跑起来
+            click_nav(hwnd, "网络问题")
+            click_tile(hwnd, "auto")   # 启动检测，让子进程跑起来
             time.sleep(wait)
 
             user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
@@ -349,8 +351,8 @@ def test_task_switch(exe):
             return
         time.sleep(2)
 
-        click_nav(hwnd, "网络")
-        for key in ("test", "info", "test", "auto"):
+        click_nav(hwnd, "网络问题")
+        for key in ("auto", "info", "auto", "ports"):
             click_tile(hwnd, key)
             time.sleep(0.4)
         time.sleep(6)
