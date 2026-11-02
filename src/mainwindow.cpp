@@ -24,6 +24,7 @@
 #include <QJsonParseError>
 #include <QLabel>
 #include <QLayoutItem>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPixmap>
@@ -242,6 +243,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupPlaceholders();
     setupNetwork();
     setupSystem();
+    setupTools();
 
     connect(m_runner, &ProcessRunner::outputReceived,
             this, [this](const QString &text) {
@@ -255,7 +257,10 @@ MainWindow::MainWindow(QWidget *parent)
                     || m_task == Task::UninstallList || m_task == Task::UninstallAction
                     || m_task == Task::DriverList
                     || m_task == Task::HostsRead || m_task == Task::HostsWrite
-                    || m_task == Task::DnsRead || m_task == Task::DnsWrite)
+                    || m_task == Task::DnsRead || m_task == Task::DnsWrite
+                    || m_task == Task::FileLock || m_task == Task::BootTime
+                    || m_task == Task::ContextMenuList
+                    || m_task == Task::ContextMenuToggle)
                     return;
                 appendLog(text);
             });
@@ -367,7 +372,9 @@ void MainWindow::setupTheme()
     ui->btn_largeFiles->setIcon(tileIcon(UiIcons::Icon::Disk));
     ui->btn_treedisk->setIcon(tileIcon(UiIcons::Icon::Picture));
     ui->btn_dup->setIcon(tileIcon(UiIcons::Icon::Grid));
-    ui->btn_hash->setIcon(grayIcon(UiIcons::Icon::Link));
+    ui->btn_contextMenu->setIcon(tileIcon(UiIcons::Icon::Dots));
+    ui->btn_bootTime->setIcon(tileIcon(UiIcons::Icon::Rocket));
+    ui->btn_fileLock->setIcon(tileIcon(UiIcons::Icon::Link));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
     for (QToolButton *b : {ui->btn_quickHealth, ui->btn_quickNetwork,
@@ -383,7 +390,8 @@ void MainWindow::setupTheme()
                             ui->btn_startup, ui->btn_process,
                             ui->btn_uninstall, ui->btn_drivers,
                             ui->btn_largeFiles, ui->btn_treedisk,
-                            ui->btn_dup, ui->btn_hash}) {
+                            ui->btn_dup, ui->btn_contextMenu,
+                            ui->btn_bootTime, ui->btn_fileLock}) {
         b->setIconSize(QSize(30, 30));
     }
 
@@ -587,11 +595,6 @@ void MainWindow::setupPlaceholders()
                         "蓝屏分析",
                         "将读取最近一次崩溃的转储文件，定位可能引发蓝屏的"
                         "驱动或硬件，并给出处理建议。");
-
-    wirePlaceholderTile(ui->btn_hash,
-                        "文件哈希",
-                        "将计算文件的 MD5 / SHA1 / SHA256，"
-                        "用于校验下载文件是否完整、是否被篡改。");
 }
 
 // ---------------------------------------------------------------- 网络模块
@@ -792,6 +795,18 @@ void MainWindow::onTaskFinished(int exitCode)
         break;
     case Task::DnsWrite:
         handleDnsWrite();
+        break;
+    case Task::FileLock:
+        handleFileLock();
+        break;
+    case Task::BootTime:
+        handleBootTime();
+        break;
+    case Task::ContextMenuList:
+        handleContextMenuList();
+        break;
+    case Task::ContextMenuToggle:
+        handleContextMenuToggle();
         break;
     case Task::NetInfo:
         handleNetworkInfo();
@@ -4115,3 +4130,683 @@ bool MainWindow::batExists(const QString &fileName) const
     return QFileInfo::exists(
         QCoreApplication::applicationDirPath() + "/bat/" + fileName);
 }
+
+// ---------------------------------------------------------------- 实用工具
+
+namespace {
+
+/** 右键菜单作用范围（注册表路径代码）→ 中文标签 */
+QString contextScopeLabel(const QString &scope)
+{
+    if (scope == QLatin1String("*"))
+        return QStringLiteral("所有文件");
+    if (scope == QLatin1String("Directory"))
+        return QStringLiteral("文件夹");
+    if (scope == QLatin1String("Directory\\Background"))
+        return QStringLiteral("文件夹空白处");
+    if (scope == QLatin1String("Drive"))
+        return QStringLiteral("驱动器");
+    if (scope == QLatin1String("Folder"))
+        return QStringLiteral("文件夹(兼容)");
+    if (scope == QLatin1String("AllFilesystemObjects"))
+        return QStringLiteral("所有对象");
+    if (scope == QLatin1String("DesktopBackground"))
+        return QStringLiteral("桌面空白处");
+    return scope;
+}
+
+/** 占用进程类型（脚本输出英文枚举）→ 中文标签 */
+QString lockTypeLabel(const QString &code)
+{
+    if (code == QLatin1String("window"))
+        return QStringLiteral("窗口程序");
+    if (code == QLatin1String("service"))
+        return QStringLiteral("系统服务");
+    if (code == QLatin1String("explorer"))
+        return QStringLiteral("资源管理器");
+    if (code == QLatin1String("console"))
+        return QStringLiteral("控制台程序");
+    if (code == QLatin1String("critical"))
+        return QStringLiteral("系统关键进程");
+    return QStringLiteral("应用程序");
+}
+
+/** 过长的命令行截断，避免把整行撑破 */
+QString elideCommand(const QString &command, int maxChars = 120)
+{
+    if (command.size() <= maxChars)
+        return command;
+    return command.left(maxChars) + QStringLiteral("…");
+}
+
+} // namespace
+
+void MainWindow::setupTools()
+{
+    // 结果行数少于滚动区高度时，保持自然高度而不是被拉高铺满
+    ui->contextMenuRowsLayout->setAlignment(Qt::AlignTop);
+    ui->bootTimeRowsLayout->setAlignment(Qt::AlignTop);
+    ui->fileLockRowsLayout->setAlignment(Qt::AlignTop);
+
+    // 右键菜单管理
+    connect(ui->btn_contextMenu, &QAbstractButton::clicked,
+            this, &MainWindow::runContextMenuList);
+
+    // 开机耗时分析
+    connect(ui->btn_bootTime, &QAbstractButton::clicked,
+            this, &MainWindow::runBootTime);
+
+    // 文件占用：先展开卡片，再由用户选择文件
+    connect(ui->btn_fileLock, &QAbstractButton::clicked, this, [this]() {
+        while (QLayoutItem *item = ui->fileLockRowsLayout->takeAt(0)) {
+            if (QWidget *widget = item->widget())
+                widget->deleteLater();
+            delete item;
+        }
+        ui->fileLockSummary->setText(
+            QStringLiteral("选择一个文件，查看是哪个进程正在占用它"));
+        ui->cardFileLock->setVisible(true);
+        QTimer::singleShot(0, this, [this] {
+            ui->pageTools->ensureWidgetVisible(ui->cardFileLock);
+        });
+        ui->fileLockPath->setFocus();
+    });
+
+    connect(ui->fileLockBrowseBtn, &QPushButton::clicked, this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(
+            this, QStringLiteral("选择要检查的文件"), QString(),
+            QStringLiteral("所有文件 (*.*)"));
+        if (path.isEmpty())
+            return;
+        ui->fileLockPath->setText(path);
+        runFileLock(path);
+    });
+
+    connect(ui->fileLockCheckBtn, &QPushButton::clicked, this, [this]() {
+        const QString path = ui->fileLockPath->text().trimmed();
+        if (path.isEmpty()) {
+            showMessage("请先选择文件",
+                        "请点击「选择文件」或直接粘贴一个完整的文件路径。",
+                        QMessageBox::Information);
+            ui->fileLockPath->setFocus();
+            return;
+        }
+        runFileLock(path);
+    });
+}
+
+// ---------------------------------------------------------------- 右键菜单管理
+
+void MainWindow::runContextMenuList()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/contextmenu.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少右键菜单脚本",
+                    "未找到 ps1\\contextmenu.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在读取右键菜单项，请稍候……");
+
+    while (QLayoutItem *item = ui->contextMenuRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->contextMenuSummary->setText(QStringLiteral("正在读取……"));
+    ui->cardContextMenu->setVisible(true);
+    QTimer::singleShot(0, this, [this] {
+        ui->pageTools->ensureWidgetVisible(ui->cardContextMenu);
+    });
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), QStringLiteral("list")
+    };
+
+    m_task = Task::ContextMenuList;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleContextMenuList()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("CONTEXTMENU_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError) {
+        appendLog("-------------------");
+        appendLog("读取右键菜单失败：未能解析脚本输出。");
+        ui->contextMenuSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取右键菜单失败",
+                    "未能从 PowerShell 获取右键菜单列表。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    QJsonArray items;
+    if (document.isArray())
+        items = document.array();
+    else if (document.isObject())
+        items.append(document.object());
+
+    int total = 0;
+    int disabledCount = 0;
+    for (const QJsonValue &value : items) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject object = value.toObject();
+        const QString scope = object.value(QStringLiteral("scope")).toString();
+        const QString entry = object.value(QStringLiteral("entry")).toString();
+        if (entry.isEmpty())
+            continue;
+
+        QString badge = contextScopeLabel(scope);
+        if (object.value(QStringLiteral("admin")).toBool())
+            badge += QStringLiteral(" · 系统");
+
+        const QString command = object.value(QStringLiteral("command")).toString();
+        const QString detail = command.isEmpty()
+                                   ? QStringLiteral("没有注册命令行（可能是系统内置项）")
+                                   : elideCommand(command);
+
+        const bool disabled = object.value(QStringLiteral("disabled")).toBool();
+        if (disabled)
+            ++disabledCount;
+
+        addContextMenuRow(badge,
+                          object.value(QStringLiteral("display")).toString(),
+                          detail,
+                          object.value(QStringLiteral("root")).toString(),
+                          scope, entry, disabled);
+        ++total;
+    }
+
+    QString summary;
+    if (total == 0)
+        summary = QStringLiteral("未发现可管理的右键菜单项");
+    else
+        summary = QStringLiteral("共 %1 项 · 已禁用 %2 项 · 带「系统」标记的项需要管理员权限才能切换")
+                      .arg(total)
+                      .arg(disabledCount);
+
+    ui->contextMenuSummary->setText(summary);
+    ui->contextMenuScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addContextMenuRow(const QString &badge, const QString &display,
+                                   const QString &detail, const QString &root,
+                                   const QString &scope, const QString &entry,
+                                   bool disabled)
+{
+    QWidget *row = new QWidget(ui->contextMenuRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badgeLabel = new QLabel(badge, row);
+    badgeLabel->setObjectName(QStringLiteral("cmBadge"));
+    badgeLabel->setAlignment(Qt::AlignCenter);
+    badgeLabel->setFixedWidth(104);
+
+    QLabel *title = new QLabel(display.isEmpty() ? entry : display, row);
+    title->setObjectName(QStringLiteral("cmName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("cmDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    QPushButton *toggle = new QPushButton(disabled ? QStringLiteral("启用")
+                                                   : QStringLiteral("禁用"), row);
+    toggle->setObjectName(QStringLiteral("cmToggleBtn"));
+    toggle->setFixedWidth(64);
+    connect(toggle, &QPushButton::clicked, this,
+            [this, root, scope, entry, disabled] {
+                runContextMenuToggle(root, scope, entry, !disabled);
+            });
+
+    layout->addWidget(badgeLabel, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+    layout->addWidget(toggle, 0, Qt::AlignTop);
+
+    const int insertAt = qMax(0, ui->contextMenuRowsLayout->count() - 1);
+    ui->contextMenuRowsLayout->insertWidget(insertAt, row);
+}
+
+void MainWindow::runContextMenuToggle(const QString &root, const QString &scope,
+                                      const QString &entry, bool disable)
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/contextmenu.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少右键菜单脚本",
+                    "未找到 ps1\\contextmenu.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    m_cmRoot = root;
+    m_cmScope = scope;
+    m_cmEntry = entry;
+
+    ++m_flow;
+
+    clearLog();
+    appendLog(disable ? QStringLiteral("正在禁用右键菜单项：%1").arg(entry)
+                      : QStringLiteral("正在启用右键菜单项：%1").arg(entry));
+
+    ui->contextMenuSummary->setText(disable ? QStringLiteral("正在禁用……")
+                                            : QStringLiteral("正在启用……"));
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), disable ? QStringLiteral("disable")
+                                           : QStringLiteral("enable"),
+        QStringLiteral("-Root"), root,
+        QStringLiteral("-Scope"), scope,
+        QStringLiteral("-Entry"), entry
+    };
+
+    m_task = Task::ContextMenuToggle;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleContextMenuToggle()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("CONTEXTMENU_ACTION_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || !document.isObject()) {
+        ui->contextMenuSummary->setText(QStringLiteral("操作失败"));
+        showMessage("操作失败",
+                    "未能从 PowerShell 获取操作结果，请稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject object = document.object();
+    const bool ok = object.value(QStringLiteral("ok")).toBool();
+    if (!ok) {
+        ui->contextMenuSummary->setText(QStringLiteral("操作失败"));
+        showMessage("修改右键菜单失败",
+                    "系统返回：" + object.value(QStringLiteral("message")).toString()
+                        + "\n\n带「系统」标记的项位于 HKLM，需要以管理员身份运行本程序后才能修改。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    // 重新读取一遍，让列表里的禁用状态与注册表保持一致。
+    // 必须延后到下一轮事件循环：本函数在 onTaskFinished 内被调用，
+    // 它返回后会把 m_task 重置为 None。
+    QTimer::singleShot(0, this, [this]() { runContextMenuList(); });
+}
+
+// ---------------------------------------------------------------- 开机耗时
+
+void MainWindow::runBootTime()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/boottime.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少开机耗时脚本",
+                    "未找到 ps1\\boottime.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog("正在分析开机耗时，请稍候……");
+
+    while (QLayoutItem *item = ui->bootTimeRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->bootTimeSummary->setText(QStringLiteral("正在读取……"));
+    ui->cardBootTime->setVisible(true);
+    QTimer::singleShot(0, this, [this] {
+        ui->pageTools->ensureWidgetVisible(ui->cardBootTime);
+    });
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::BootTime;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleBootTime()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("BOOTTIME_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("读取开机耗时失败：未能解析脚本输出。");
+        ui->bootTimeSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取开机耗时失败",
+                    "未能从 PowerShell 获取开机时间信息。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject object = document.object();
+    const QString bootTime = object.value(QStringLiteral("bootTime")).toString();
+    if (bootTime.isEmpty()) {
+        ui->bootTimeSummary->setText(QStringLiteral("读取失败：没有拿到开机时间"));
+        showMessage("读取开机耗时失败",
+                    "系统没有返回有效的开机时间，请稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const bool reliable = object.value(QStringLiteral("desktopReliable")).toBool();
+    const int desktopSeconds = object.value(QStringLiteral("desktopSeconds")).toInt(-1);
+    const qint64 uptimeSeconds =
+        static_cast<qint64>(object.value(QStringLiteral("uptimeMinutes")).toDouble()) * 60;
+    const int startupCount = object.value(QStringLiteral("startupCount")).toInt();
+
+    QString summary;
+    if (reliable && desktopSeconds >= 0)
+        summary = QStringLiteral("上次开机 %1 · 进入桌面约 %2 秒")
+                      .arg(bootTime)
+                      .arg(desktopSeconds);
+    else
+        summary = QStringLiteral("上次开机 %1 · 资源管理器已重启，本次无法估算进入桌面耗时")
+                      .arg(bootTime);
+    ui->bootTimeSummary->setText(summary);
+
+    addBootRow(QStringLiteral("开机"), bootTime,
+               QStringLiteral("系统内核记录的本次启动时间"));
+
+    if (reliable && desktopSeconds >= 0) {
+        QString verdict;
+        if (desktopSeconds <= 15)
+            verdict = QStringLiteral("很快，系统启动顺畅");
+        else if (desktopSeconds <= 30)
+            verdict = QStringLiteral("正常范围");
+        else if (desktopSeconds <= 60)
+            verdict = QStringLiteral("偏慢，可考虑精简启动项");
+        else
+            verdict = QStringLiteral("明显偏慢，建议检查启动项与磁盘状态");
+        addBootRow(QStringLiteral("%1 秒").arg(desktopSeconds),
+                   QStringLiteral("进入桌面"), verdict);
+    } else {
+        addBootRow(QStringLiteral("—"), QStringLiteral("进入桌面"),
+                   QStringLiteral("资源管理器在开机后重启过，重启电脑后再查看即可获得准确耗时"));
+    }
+
+    addBootRow(QStringLiteral("已运行"), formatUptime(uptimeSeconds),
+               QStringLiteral("距上次开机已运行时长"));
+
+    addBootRow(QStringLiteral("%1 个").arg(startupCount), QStringLiteral("开机自启动"),
+               startupCount > 15
+                   ? QStringLiteral("启动项偏多，可在「系统管理 → 启动项管理」里逐项确认")
+                   : QStringLiteral("数量正常，可在「系统管理 → 启动项管理」里查看明细"));
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addBootRow(const QString &badge, const QString &title,
+                            const QString &detail)
+{
+    QWidget *row = new QWidget(ui->bootTimeRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badgeLabel = new QLabel(badge, row);
+    badgeLabel->setObjectName(QStringLiteral("bootBadge"));
+    badgeLabel->setAlignment(Qt::AlignCenter);
+    badgeLabel->setFixedWidth(88);
+
+    QLabel *titleLabel = new QLabel(title, row);
+    titleLabel->setObjectName(QStringLiteral("bootName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("bootDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(titleLabel);
+    text->addWidget(desc);
+
+    layout->addWidget(badgeLabel, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    const int insertAt = qMax(0, ui->bootTimeRowsLayout->count() - 1);
+    ui->bootTimeRowsLayout->insertWidget(insertAt, row);
+}
+
+// ---------------------------------------------------------------- 文件占用
+
+void MainWindow::runFileLock(const QString &path)
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/filelock.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少占用查询脚本",
+                    "未找到 ps1\\filelock.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    if (!QFileInfo::exists(path)) {
+        ui->fileLockSummary->setText(QStringLiteral("文件不存在，请重新选择"));
+        showMessage("文件不存在",
+                    "找不到这个文件，可能已被移动或删除。\n\n" + path,
+                    QMessageBox::Warning);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog(QStringLiteral("正在查询占用：%1").arg(path));
+
+    while (QLayoutItem *item = ui->fileLockRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->fileLockSummary->setText(QStringLiteral("正在查询……"));
+    ui->cardFileLock->setVisible(true);
+    QTimer::singleShot(0, this, [this] {
+        ui->pageTools->ensureWidgetVisible(ui->cardFileLock);
+    });
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Path"), path
+    };
+
+    m_task = Task::FileLock;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleFileLock()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("FILELOCK_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("查询文件占用失败：未能解析脚本输出。");
+        ui->fileLockSummary->setText(QStringLiteral("查询失败"));
+        showMessage("查询文件占用失败",
+                    "未能从 PowerShell 获取查询结果，请稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject object = document.object();
+    const int status = object.value(QStringLiteral("status")).toInt();
+    const QString path = object.value(QStringLiteral("path")).toString();
+
+    if (status != 0) {
+        ui->fileLockSummary->setText(QStringLiteral("查询失败（错误码 %1）").arg(status));
+        showMessage("查询文件占用失败",
+                    QStringLiteral("系统接口返回错误码 %1。\n\n"
+                                   "如果查询的是系统目录或被系统进程占用的文件，"
+                                   "可尝试以管理员身份运行本程序后再查询。")
+                        .arg(status),
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonValue processesValue = object.value(QStringLiteral("processes"));
+    QJsonArray processes;
+    if (processesValue.isArray())
+        processes = processesValue.toArray();
+    else if (processesValue.isObject())
+        processes.append(processesValue.toObject());
+
+    int total = 0;
+    for (const QJsonValue &value : processes) {
+        if (!value.isObject())
+            continue;
+        const QJsonObject process = value.toObject();
+        const int pid = process.value(QStringLiteral("pid")).toInt();
+        const QString name = process.value(QStringLiteral("name")).toString();
+        const QString type = process.value(QStringLiteral("type")).toString();
+        const QString app = process.value(QStringLiteral("app")).toString();
+
+        QString detail = QStringLiteral("PID %1").arg(pid);
+        if (!app.isEmpty())
+            detail += QStringLiteral(" · %1").arg(app);
+
+        addFileLockRow(lockTypeLabel(type),
+                       name.isEmpty() ? QStringLiteral("(未知进程)") : name,
+                       detail);
+        ++total;
+    }
+
+    const QString fileName = QFileInfo(path).fileName();
+    QString summary;
+    if (total == 0)
+        summary = QStringLiteral("没有进程占用 %1，可以正常删除或重命名").arg(fileName);
+    else
+        summary = QStringLiteral("%1 正被 %2 个进程占用 · 关闭对应程序后即可操作")
+                      .arg(fileName)
+                      .arg(total);
+
+    ui->fileLockSummary->setText(summary);
+    ui->fileLockScroll->verticalScrollBar()->setValue(0);
+
+    appendLog("-------------------");
+    appendLog(summary);
+}
+
+void MainWindow::addFileLockRow(const QString &badge, const QString &name,
+                                const QString &detail)
+{
+    QWidget *row = new QWidget(ui->fileLockRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badgeLabel = new QLabel(badge, row);
+    badgeLabel->setObjectName(QStringLiteral("lockBadge"));
+    badgeLabel->setAlignment(Qt::AlignCenter);
+    badgeLabel->setFixedWidth(104);
+
+    QLabel *title = new QLabel(name, row);
+    title->setObjectName(QStringLiteral("lockName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("lockDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(desc);
+
+    layout->addWidget(badgeLabel, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    const int insertAt = qMax(0, ui->fileLockRowsLayout->count() - 1);
+    ui->fileLockRowsLayout->insertWidget(insertAt, row);
+}
+

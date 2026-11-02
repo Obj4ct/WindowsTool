@@ -76,6 +76,9 @@ ui_*.h
 __pycache__/
 *.pyc
 
+# ---- 本地功能文档（只维护在本地，不随仓库提交） ----
+docs/功能清单.md
+
 # ---- 系统垃圾 ----
 Thumbs.db
 desktop.ini

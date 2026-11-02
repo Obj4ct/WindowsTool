@@ -3064,28 +3064,19 @@
                  <item>
                   <widget class="QLabel" name="cardHintTools">
                    <property name="text">
-                    <string>扫描大文件、目录占用、重复文件，计算文件校验值</string>
+                    <string>扫描大文件、目录占用与重复文件，管理右键菜单、查看开机耗时与文件占用</string>
                    </property>
                   </widget>
                  </item>
                  <item>
-                  <layout class="QHBoxLayout" name="tileRowTools">
-                   <property name="spacing">
+                  <layout class="QGridLayout" name="tileGridTools">
+                   <property name="horizontalSpacing">
                     <number>12</number>
                    </property>
-                   <property name="leftMargin">
-                    <number>0</number>
+                   <property name="verticalSpacing">
+                    <number>12</number>
                    </property>
-                   <property name="topMargin">
-                    <number>0</number>
-                   </property>
-                   <property name="rightMargin">
-                    <number>0</number>
-                   </property>
-                   <property name="bottomMargin">
-                    <number>0</number>
-                   </property>
-                   <item>
+                   <item row="0" column="0">
                     <widget class="QToolButton" name="btn_largeFiles">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -3107,7 +3098,7 @@
                      </property>
                     </widget>
                    </item>
-                   <item>
+                   <item row="0" column="1">
                     <widget class="QToolButton" name="btn_treedisk">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -3129,7 +3120,7 @@
                      </property>
                     </widget>
                    </item>
-                   <item>
+                   <item row="0" column="2">
                     <widget class="QToolButton" name="btn_dup">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -3151,8 +3142,8 @@
                      </property>
                     </widget>
                    </item>
-                   <item>
-                    <widget class="QToolButton" name="btn_hash">
+                   <item row="1" column="0">
+                    <widget class="QToolButton" name="btn_contextMenu">
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
                        <horstretch>1</horstretch>
@@ -3169,7 +3160,51 @@
                       <enum>Qt::ToolButtonTextUnderIcon</enum>
                      </property>
                      <property name="text">
-                      <string>文件哈希</string>
+                      <string>右键菜单</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="1" column="1">
+                    <widget class="QToolButton" name="btn_bootTime">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                       <horstretch>1</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
+                     <property name="minimumSize">
+                      <size>
+                       <width>0</width>
+                       <height>92</height>
+                      </size>
+                     </property>
+                     <property name="toolButtonStyle">
+                      <enum>Qt::ToolButtonTextUnderIcon</enum>
+                     </property>
+                     <property name="text">
+                      <string>开机耗时</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="1" column="2">
+                    <widget class="QToolButton" name="btn_fileLock">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                       <horstretch>1</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
+                     <property name="minimumSize">
+                      <size>
+                       <width>0</width>
+                       <height>92</height>
+                      </size>
+                     </property>
+                     <property name="toolButtonStyle">
+                      <enum>Qt::ToolButtonTextUnderIcon</enum>
+                     </property>
+                     <property name="text">
+                      <string>文件占用</string>
                      </property>
                     </widget>
                    </item>
@@ -3474,6 +3509,310 @@
                     </widget>
                    </item>
                   </layout>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QFrame" name="cardContextMenu">
+                <property name="visible">
+                 <bool>false</bool>
+                </property>
+                <property name="frameShape">
+                 <enum>QFrame::NoFrame</enum>
+                </property>
+                <layout class="QVBoxLayout" name="contextMenuLayout">
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>14</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>14</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="contextMenuTitle">
+                   <property name="text">
+                    <string>右键菜单管理</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="contextMenuSummary">
+                   <property name="text">
+                    <string>正在读取……</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QScrollArea" name="contextMenuScroll">
+                   <property name="minimumSize">
+                    <size>
+                     <width>0</width>
+                     <height>235</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16777215</width>
+                     <height>235</height>
+                    </size>
+                   </property>
+                   <property name="frameShape">
+                    <enum>QFrame::NoFrame</enum>
+                   </property>
+                   <property name="horizontalScrollBarPolicy">
+                    <enum>Qt::ScrollBarAlwaysOff</enum>
+                   </property>
+                   <property name="widgetResizable">
+                    <bool>true</bool>
+                   </property>
+                   <widget class="QWidget" name="contextMenuRows">
+                    <layout class="QVBoxLayout" name="contextMenuRowsLayout">
+                     <property name="spacing">
+                      <number>8</number>
+                     </property>
+                     <property name="leftMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                    </layout>
+                   </widget>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QFrame" name="cardBootTime">
+                <property name="visible">
+                 <bool>false</bool>
+                </property>
+                <property name="frameShape">
+                 <enum>QFrame::NoFrame</enum>
+                </property>
+                <layout class="QVBoxLayout" name="bootTimeLayout">
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>14</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>14</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="bootTimeTitle">
+                   <property name="text">
+                    <string>开机耗时分析</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="bootTimeSummary">
+                   <property name="text">
+                    <string>正在读取……</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QScrollArea" name="bootTimeScroll">
+                   <property name="minimumSize">
+                    <size>
+                     <width>0</width>
+                     <height>180</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16777215</width>
+                     <height>180</height>
+                    </size>
+                   </property>
+                   <property name="frameShape">
+                    <enum>QFrame::NoFrame</enum>
+                   </property>
+                   <property name="horizontalScrollBarPolicy">
+                    <enum>Qt::ScrollBarAlwaysOff</enum>
+                   </property>
+                   <property name="widgetResizable">
+                    <bool>true</bool>
+                   </property>
+                   <widget class="QWidget" name="bootTimeRows">
+                    <layout class="QVBoxLayout" name="bootTimeRowsLayout">
+                     <property name="spacing">
+                      <number>8</number>
+                     </property>
+                     <property name="leftMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                    </layout>
+                   </widget>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QFrame" name="cardFileLock">
+                <property name="visible">
+                 <bool>false</bool>
+                </property>
+                <property name="frameShape">
+                 <enum>QFrame::NoFrame</enum>
+                </property>
+                <layout class="QVBoxLayout" name="fileLockLayout">
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>14</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>14</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="fileLockTitle">
+                   <property name="text">
+                    <string>文件占用查询</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="fileLockSummary">
+                   <property name="text">
+                    <string>选择一个文件，查看是哪个进程正在占用它</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="fileLockInputRow">
+                   <property name="spacing">
+                    <number>8</number>
+                   </property>
+                   <item>
+                    <widget class="QLineEdit" name="fileLockPath">
+                     <property name="placeholderText">
+                      <string>选择或粘贴文件路径</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="fileLockBrowseBtn">
+                     <property name="minimumSize">
+                      <size>
+                       <width>0</width>
+                       <height>32</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>选择文件</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="fileLockCheckBtn">
+                     <property name="minimumSize">
+                      <size>
+                       <width>0</width>
+                       <height>32</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>查询占用</string>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </item>
+                 <item>
+                  <widget class="QScrollArea" name="fileLockScroll">
+                   <property name="minimumSize">
+                    <size>
+                     <width>0</width>
+                     <height>180</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16777215</width>
+                     <height>180</height>
+                    </size>
+                   </property>
+                   <property name="frameShape">
+                    <enum>QFrame::NoFrame</enum>
+                   </property>
+                   <property name="horizontalScrollBarPolicy">
+                    <enum>Qt::ScrollBarAlwaysOff</enum>
+                   </property>
+                   <property name="widgetResizable">
+                    <bool>true</bool>
+                   </property>
+                   <widget class="QWidget" name="fileLockRows">
+                    <layout class="QVBoxLayout" name="fileLockRowsLayout">
+                     <property name="spacing">
+                      <number>8</number>
+                     </property>
+                     <property name="leftMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                    </layout>
+                   </widget>
+                  </widget>
                  </item>
                 </layout>
                </widget>

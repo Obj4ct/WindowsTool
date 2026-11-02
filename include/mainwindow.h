@@ -60,7 +60,11 @@ private:
         HostsRead,       ///< 读取 Hosts（hosts.ps1 -Action read）
         HostsWrite,      ///< 写入/恢复 Hosts（hosts.ps1 -Action save/restore）
         DnsRead,         ///< 读取当前网卡 DNS（dns.ps1 -Action read）
-        DnsWrite         ///< 切换 DNS（dns.ps1 -Action apply）
+        DnsWrite,        ///< 切换 DNS（dns.ps1 -Action apply）
+        FileLock,        ///< 查询文件被哪个进程占用（filelock.ps1）
+        BootTime,        ///< 开机耗时分析（boottime.ps1）
+        ContextMenuList, ///< 右键菜单项枚举（contextmenu.ps1 list）
+        ContextMenuToggle ///< 禁用/启用右键菜单项（contextmenu.ps1 disable/enable）
     };
 
     void setupTheme();
@@ -70,6 +74,7 @@ private:
     void setupPlaceholders();
     void setupNetwork();
     void setupSystem();
+    void setupTools();
 
     /** 切换功能页（0 概览 / 1 网络 / 2 系统维护 / 3 硬件监控 / 4 系统管理 / 5 实用工具） */
     void showPage(int index);
@@ -186,6 +191,29 @@ private:
     void runMonitor();
     void stopMonitor();
 
+    // 右键菜单管理（枚举 + 禁用/启用）
+    void runContextMenuList();
+    void handleContextMenuList();
+    void addContextMenuRow(const QString &badge, const QString &display,
+                           const QString &detail, const QString &root,
+                           const QString &scope, const QString &entry,
+                           bool disabled);
+    void runContextMenuToggle(const QString &root, const QString &scope,
+                              const QString &entry, bool disable);
+    void handleContextMenuToggle();
+
+    // 开机耗时分析（只读）
+    void runBootTime();
+    void handleBootTime();
+    void addBootRow(const QString &badge, const QString &title,
+                    const QString &detail);
+
+    // 文件占用查询（只读）
+    void runFileLock(const QString &path);
+    void handleFileLock();
+    void addFileLockRow(const QString &badge, const QString &name,
+                        const QString &detail);
+
     /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
     void showSystemResultCard(QWidget *card);
 
@@ -200,6 +228,11 @@ private:
     int m_dupShown = 0;
     int m_dupFiles = 0;
     qint64 m_dupBytes = 0;
+
+    /** 右键菜单切换：记录待操作的注册表项，失败提示时用于说明位置 */
+    QString m_cmRoot;
+    QString m_cmScope;
+    QString m_cmEntry;
 
     /** CPU/内存/磁盘/网络实时采样器 */
     SysMonitor *m_monitor = nullptr;

@@ -101,7 +101,8 @@
 #cardSystem, #cardHealth, #cardHardware, #cardManage, #cardTools,
 #cardStartup, #cardPorts, #cardLargeFiles, #cardDiskHealth, #cardHwinfo,
 #cardProcesses, #cardDiskUsage, #cardUninstall, #cardDrivers, #cardHosts,
-#cardDns, #cardMonitor, #cardShortcuts, #cardBattery, #cardDup {
+#cardDns, #cardMonitor, #cardShortcuts, #cardBattery, #cardDup,
+#cardContextMenu, #cardBootTime, #cardFileLock {
     background: #FFFFFF;
     border: 1px solid #E6EAF2;
     border-radius: 16px;
@@ -111,7 +112,8 @@
 #cardTitleSys, #cardTitleHardware, #cardTitleManage, #cardTitleTools,
 #healthTitle, #startupTitle, #portsTitle, #largeFilesTitle, #diskHealthTitle,
 #hwinfoTitle, #processesTitle, #diskUsageTitle, #uninstallTitle, #driversTitle,
-#hostsTitle, #dnsTitle, #monitorTitle, #batteryTitle, #dupTitle, #cardTitleTool {
+#hostsTitle, #dnsTitle, #monitorTitle, #batteryTitle, #dupTitle, #cardTitleTool,
+#contextMenuTitle, #bootTimeTitle, #fileLockTitle {
     color: #1B2637;
     font-size: 15px;
     font-weight: 600;
@@ -130,7 +132,8 @@
 #btn_hosts, #btn_dns,
 #btn_cleaner, #btn_fixWhite, #btn_healthCheck,
 #btn_diskHealth, #btn_hwinfo, #btn_monitor, #btn_startup, #btn_process, #btn_uninstall,
-#btn_drivers, #btn_largeFiles, #btn_treedisk, #btn_prt, #btn_dup {
+#btn_drivers, #btn_largeFiles, #btn_treedisk, #btn_prt, #btn_dup,
+#btn_contextMenu, #btn_bootTime, #btn_fileLock {
     background: #FFFFFF;
     border: 1px solid #E3E8F1;
     border-radius: 14px;
@@ -145,7 +148,8 @@
 #btn_cleaner:hover, #btn_fixWhite:hover, #btn_healthCheck:hover,
 #btn_diskHealth:hover, #btn_hwinfo:hover, #btn_monitor:hover, #btn_startup:hover, #btn_process:hover,
 #btn_uninstall:hover, #btn_drivers:hover,
-#btn_largeFiles:hover, #btn_treedisk:hover, #btn_prt:hover, #btn_dup:hover {
+#btn_largeFiles:hover, #btn_treedisk:hover, #btn_prt:hover, #btn_dup:hover,
+#btn_contextMenu:hover, #btn_bootTime:hover, #btn_fileLock:hover {
     background: #FAFCFF;
     border-color: #AEC7F4;
     color: #1A5FD0;
@@ -156,12 +160,13 @@
 #btn_cleaner:pressed, #btn_fixWhite:pressed, #btn_healthCheck:pressed,
 #btn_diskHealth:pressed, #btn_hwinfo:pressed, #btn_monitor:pressed, #btn_startup:pressed, #btn_process:pressed,
 #btn_uninstall:pressed, #btn_drivers:pressed,
-#btn_largeFiles:pressed, #btn_treedisk:pressed, #btn_prt:pressed, #btn_dup:pressed {
+#btn_largeFiles:pressed, #btn_treedisk:pressed, #btn_prt:pressed, #btn_dup:pressed,
+#btn_contextMenu:pressed, #btn_bootTime:pressed, #btn_fileLock:pressed {
     background: #EFF4FD;
     border-color: #8FB4EE;
 }
 #btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_netWorkTest:disabled, #btn_ports:disabled, #btn_hosts:disabled, #btn_dns:disabled,
-#btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled, #btn_startup:disabled, #btn_hwinfo:disabled, #btn_monitor:disabled, #btn_process:disabled, #btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled, #btn_diskHealth:disabled, #btn_prt:disabled, #btn_dup:disabled {
+#btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled, #btn_startup:disabled, #btn_hwinfo:disabled, #btn_monitor:disabled, #btn_process:disabled, #btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled, #btn_diskHealth:disabled, #btn_prt:disabled, #btn_dup:disabled, #btn_contextMenu:disabled, #btn_bootTime:disabled, #btn_fileLock:disabled {
     background: #F7F8FA;
     border-color: #EAEEF4;
     color: #B6BFCC;
@@ -759,6 +764,112 @@ QToolButton[placeholder="true"]:pressed {
 }
 
 #dupDeleteBtn:disabled {
+    color: #B6BFCC;
+}
+
+/* ---------------- 右键菜单管理 ---------------- */
+#contextMenuSummary, #bootTimeSummary, #fileLockSummary {
+    color: #4A576F;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#contextMenuScroll, #contextMenuRows,
+#bootTimeScroll, #bootTimeRows,
+#fileLockScroll, #fileLockRows {
+    background: transparent;
+    border: none;
+}
+
+#cmBadge, #bootBadge, #lockBadge {
+    background: #EEF3FB;
+    border-radius: 8px;
+    color: #3A66B0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 6px;
+}
+
+#lockBadge[state="bad"] {
+    background: #FDECEC;
+    color: #C0392B;
+}
+
+#cmName, #bootName, #lockName {
+    color: #1E2A3B;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+#cmDetail, #bootDetail, #lockDetail {
+    color: #7A879B;
+    font-size: 12px;
+}
+
+#cmToggleBtn {
+    background: #F2F4F8;
+    border: 1px solid #E1E6EF;
+    border-radius: 8px;
+    color: #4A576F;
+    font-size: 12px;
+    padding: 4px 0;
+}
+#cmToggleBtn:hover {
+    background: #EDF1F7;
+    border-color: #CBD9F2;
+    color: #2B6CD4;
+}
+#cmToggleBtn:disabled {
+    color: #B6BFCC;
+}
+
+/* ---------------- 文件占用查询 ---------------- */
+#fileLockPath {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 9px;
+    color: #2A3648;
+    font-size: 13px;
+    padding: 7px 10px;
+}
+#fileLockPath:focus {
+    border-color: #AEC7F4;
+}
+
+#fileLockBrowseBtn {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 9px;
+    color: #4A576F;
+    font-size: 13px;
+    padding: 7px 14px;
+}
+#fileLockBrowseBtn:hover {
+    background: #F5F8FE;
+    border-color: #B9CDF0;
+    color: #2B6CD4;
+}
+
+#fileLockCheckBtn {
+    background: #4A8CFF;
+    border: 1px solid #4A8CFF;
+    border-radius: 9px;
+    color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 18px;
+}
+#fileLockCheckBtn:hover {
+    background: #2B6CD4;
+    border-color: #2B6CD4;
+}
+#fileLockCheckBtn:pressed {
+    background: #245BB8;
+    border-color: #245BB8;
+}
+#fileLockCheckBtn:disabled {
+    background: #E7ECF4;
+    border-color: #E7ECF4;
     color: #B6BFCC;
 }
 
