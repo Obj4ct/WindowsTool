@@ -1376,6 +1376,42 @@ void MainWindow::handleHealthCheck()
 
     appendLog("-------------------");
     appendLog(summary);
+
+    updateHealthScore(warnCount, riskCount);
+}
+
+void MainWindow::updateHealthScore(int warnCount, int riskCount)
+{
+    // 每项「注意」扣 18 分，「建议」扣 8 分，最低 0 分
+    int score = 100 - riskCount * 18 - warnCount * 8;
+    score = qMax(0, qMin(100, score));
+
+    QString grade;
+    QString state;
+    if (score >= 90) {
+        grade = QStringLiteral("优秀");
+        state = QStringLiteral("ok");
+    } else if (score >= 75) {
+        grade = QStringLiteral("良好");
+        state = QStringLiteral("info");
+    } else if (score >= 60) {
+        grade = QStringLiteral("一般");
+        state = QStringLiteral("warn");
+    } else {
+        grade = QStringLiteral("较差");
+        state = QStringLiteral("bad");
+    }
+
+    ui->overviewScoreValue->setText(QString::number(score));
+    ui->overviewScoreGrade->setText(
+        riskCount > 0 ? QStringLiteral("%1 · %2 项注意").arg(grade).arg(riskCount)
+                      : QStringLiteral("%1 · %2 项建议").arg(grade).arg(warnCount));
+
+    for (QLabel *label : {ui->overviewScoreValue, ui->overviewScoreGrade}) {
+        label->setProperty("state", state);
+        label->style()->unpolish(label);
+        label->style()->polish(label);
+    }
 }
 
 void MainWindow::addHealthRow(const QString &state, const QString &name,

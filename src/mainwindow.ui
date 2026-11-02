@@ -552,12 +552,49 @@
                  <item>
                   <widget class="QLabel" name="cardHintScore">
                    <property name="text">
-                    <string>将体检结果汇总为 0-100 的健康评分，一眼看清电脑整体状态（开发中）</string>
+                    <string>运行体检后自动汇总为 0-100 的健康评分，一眼看清电脑整体状态</string>
                    </property>
                    <property name="wordWrap">
                     <bool>true</bool>
                    </property>
                   </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="scoreRow">
+                   <property name="spacing">
+                    <number>10</number>
+                   </property>
+                   <item>
+                    <widget class="QLabel" name="overviewScoreValue">
+                     <property name="text">
+                      <string>—</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QLabel" name="overviewScoreGrade">
+                     <property name="text">
+                      <string>尚未体检</string>
+                     </property>
+                     <property name="alignment">
+                      <set>Qt::AlignLeading|Qt::AlignVCenter</set>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <spacer name="scoreSpacer">
+                     <property name="orientation">
+                      <enum>Qt::Horizontal</enum>
+                     </property>
+                     <property name="sizeHint" stdset="0">
+                      <size>
+                       <width>40</width>
+                       <height>20</height>
+                      </size>
+                     </property>
+                    </spacer>
+                   </item>
+                  </layout>
                  </item>
                 </layout>
                </widget>

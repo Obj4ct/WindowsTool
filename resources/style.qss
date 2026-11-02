@@ -255,6 +255,43 @@ QToolButton[placeholder="true"]:pressed {
     font-size: 12px;
 }
 
+/* ---------------- 健康评分 ---------------- */
+#overviewScoreValue {
+    color: #93A0B4;
+    font-size: 34px;
+    font-weight: 700;
+}
+#overviewScoreValue[state="ok"] {
+    color: #1F8A4C;
+}
+#overviewScoreValue[state="info"] {
+    color: #2B6CD4;
+}
+#overviewScoreValue[state="warn"] {
+    color: #B7791F;
+}
+#overviewScoreValue[state="bad"] {
+    color: #C0392B;
+}
+
+#overviewScoreGrade {
+    color: #7A879B;
+    font-size: 13px;
+    font-weight: 600;
+}
+#overviewScoreGrade[state="ok"] {
+    color: #1F8A4C;
+}
+#overviewScoreGrade[state="info"] {
+    color: #2B6CD4;
+}
+#overviewScoreGrade[state="warn"] {
+    color: #B7791F;
+}
+#overviewScoreGrade[state="bad"] {
+    color: #C0392B;
+}
+
 /* ---------------- 开机启动项 ---------------- */
 #startupSummary {
     color: #4A576F;

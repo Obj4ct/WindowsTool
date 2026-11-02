@@ -102,6 +102,9 @@ private:
     void addHealthRow(const QString &state, const QString &name,
                       const QString &detail);
 
+    /** 把体检结果汇总为 0-100 的健康评分，同步到概览页评分卡片 */
+    void updateHealthScore(int warnCount, int riskCount);
+
     // 开机启动项
     void runStartupList();
     void handleStartupList();
