@@ -375,6 +375,26 @@
     color: #C0392B;
 }
 
+/* 启动项禁用/启用小按钮 */
+#startupToggleBtn {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 8px;
+    color: #4A576F;
+    font-size: 12px;
+    padding: 0 10px;
+}
+#startupToggleBtn:hover {
+    background: #F5F8FE;
+    border-color: #B9CDF0;
+    color: #2B6CD4;
+}
+#startupToggleBtn[disabledState="true"] {
+    background: #EAF1FC;
+    border-color: #C9D9F5;
+    color: #2B6CD4;
+}
+
 /* 行内主标题 / 副标题 */
 #startupName, #portName, #largeFileName, #diskName, #hwName,
 #healthName, #procName, #usageName, #appName, #driverName,
@@ -604,6 +624,24 @@
     background: #E7ECF4;
     border-color: #E7ECF4;
     color: #B6BFCC;
+}
+
+/* 体检报告导出按钮 */
+#btn_exportHealth {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 9px;
+    color: #4A576F;
+    font-size: 13px;
+    padding: 0 16px;
+}
+#btn_exportHealth:hover {
+    background: #F5F8FE;
+    border-color: #B9CDF0;
+    color: #2B6CD4;
+}
+#btn_exportHealth:pressed {
+    background: #EAF1FC;
 }
 
 /* ---------------- 系统文件修复 / Windows 更新修复 ---------------- */

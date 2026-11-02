@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QList>
 #include <QMessageBox>
 #include <QString>
 
@@ -65,6 +66,7 @@ private:
         BootTime,        ///< 开机耗时分析（boottime.ps1）
         ContextMenuList, ///< 右键菜单项枚举（contextmenu.ps1 list）
         ContextMenuToggle, ///< 禁用/启用右键菜单项（contextmenu.ps1 disable/enable）
+        StartupToggle,   ///< 禁用/启用开机启动项（startupToggle.ps1）
         SfcRepair,       ///< 系统文件修复（sfcRepair.bat sfc/dism）
         WUpdateRepair    ///< Windows 更新修复（winUpdateFix.bat）
     };
@@ -101,11 +103,18 @@ private:
     /** 把体检结果汇总为 0-100 的健康评分，同步到概览页评分卡片 */
     void updateHealthScore(int warnCount, int riskCount);
 
+    /** 把本次体检结果导出为一份可单独打开的 HTML 报告 */
+    void exportHealthReport();
+
     // 开机启动项
     void runStartupList();
     void handleStartupList();
     void addStartupRow(const QString &source, const QString &name,
-                       const QString &command);
+                       const QString &command, const QString &sourceCode,
+                       bool disabled);
+    void runStartupToggle(const QString &action, const QString &source,
+                          const QString &name, const QString &command);
+    void handleStartupToggle();
 
     // 端口占用
     void runPortsList();
@@ -257,6 +266,17 @@ private:
 
     /** Windows 更新修复：脚本日志路径，结束后一次性读入卡片展示 */
     QString m_updateLogPath;
+
+    /** 体检报告数据：导出 HTML 时按检查项逐条还原 */
+    struct HealthItem {
+        QString state;
+        QString name;
+        QString detail;
+    };
+    QList<HealthItem> m_healthItems;
+    QString m_healthSummaryText;
+    int m_healthScore = 0;
+    QString m_healthGrade;
 
     /** CPU/内存/磁盘/网络实时采样器 */
     SysMonitor *m_monitor = nullptr;

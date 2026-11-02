@@ -7,6 +7,7 @@
 
 #include <QAbstractButton>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -214,6 +215,16 @@ QString batteryStatusLabel(int status)
     }
 }
 
+/** 报告里的文本转义，避免文件路径里的 < > & 破坏 HTML 结构 */
+QString escapeHtml(QString text)
+{
+    text.replace(QLatin1Char('&'), QStringLiteral("&amp;"));
+    text.replace(QLatin1Char('<'), QStringLiteral("&lt;"));
+    text.replace(QLatin1Char('>'), QStringLiteral("&gt;"));
+    text.replace(QLatin1Char('"'), QStringLiteral("&quot;"));
+    return text;
+}
+
 /**
  * 解码外部工具写出的日志文件。
  *
@@ -305,6 +316,7 @@ MainWindow::MainWindow(QWidget *parent)
                     || m_task == Task::FileLock || m_task == Task::BootTime
                     || m_task == Task::ContextMenuList
                     || m_task == Task::ContextMenuToggle
+                    || m_task == Task::StartupToggle
                     || m_task == Task::SfcRepair
                     || m_task == Task::WUpdateRepair)
                     return;
@@ -835,6 +847,9 @@ void MainWindow::onTaskFinished(int exitCode)
     case Task::ContextMenuToggle:
         handleContextMenuToggle();
         break;
+    case Task::StartupToggle:
+        handleStartupToggle();
+        break;
     case Task::SfcRepair:
         handleSfcRepair(exitCode);
         break;
@@ -1119,6 +1134,8 @@ void MainWindow::setupSystem()
     // 电脑体检
     connect(ui->btn_healthCheck, &QAbstractButton::clicked,
             this, &MainWindow::runHealthCheck);
+    connect(ui->btn_exportHealth, &QPushButton::clicked,
+            this, &MainWindow::exportHealthReport);
 
     // 系统文件修复（SFC / DISM）：点磁贴展开卡片，卡片内两个按钮启动修复
     connect(ui->btn_sfc, &QAbstractButton::clicked,
@@ -1239,6 +1256,10 @@ void MainWindow::runHealthCheck()
     appendLog("正在采集系统信息，请稍候……");
 
     // 清空上一次的体检结果
+    m_healthItems.clear();
+    m_healthSummaryText.clear();
+    m_healthScore = 0;
+    m_healthGrade.clear();
     while (QLayoutItem *item = ui->healthRowsLayout->takeAt(0)) {
         if (QWidget *widget = item->widget())
             widget->deleteLater();
@@ -1423,6 +1444,7 @@ void MainWindow::handleHealthCheck()
     const QString summaryState = riskCount > 0 ? QStringLiteral("risk")
                                : warnCount > 0 ? QStringLiteral("warn")
                                                : QStringLiteral("ok");
+    m_healthSummaryText = summary;
     ui->healthSummary->setText(summary);
     ui->healthSummary->setProperty("state", summaryState);
     ui->healthSummary->style()->unpolish(ui->healthSummary);
@@ -1460,6 +1482,9 @@ void MainWindow::updateHealthScore(int warnCount, int riskCount)
     ui->overviewScoreGrade->setText(
         riskCount > 0 ? QStringLiteral("%1 · %2 项注意").arg(grade).arg(riskCount)
                       : QStringLiteral("%1 · %2 项建议").arg(grade).arg(warnCount));
+
+    m_healthScore = score;
+    m_healthGrade = grade;
 
     for (QLabel *label : {ui->overviewScoreValue, ui->overviewScoreGrade}) {
         label->setProperty("state", state);
@@ -1502,6 +1527,123 @@ void MainWindow::addHealthRow(const QString &state, const QString &name,
     layout->addWidget(desc, 1);
 
     ui->healthRowsLayout->addWidget(row);
+    m_healthItems.append({state, name, detail});
+}
+
+void MainWindow::exportHealthReport()
+{
+    if (m_healthItems.isEmpty()) {
+        showMessage("还没有体检结果",
+                    "请先点「电脑体检」，等结果出来后就能导出报告了。",
+                    QMessageBox::Information);
+        return;
+    }
+
+    const QString defaultName = QStringLiteral("电脑体检报告_%1.html")
+                                    .arg(QDateTime::currentDateTime().toString(
+                                        QStringLiteral("yyyyMMdd")));
+    QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("保存体检报告"),
+        QDir(QDir::homePath()).filePath(defaultName),
+        QStringLiteral("网页文件 (*.html)"));
+    if (path.isEmpty())
+        return;
+    if (!path.endsWith(QStringLiteral(".html"), Qt::CaseInsensitive))
+        path += QStringLiteral(".html");
+
+    const QString nowText = QDateTime::currentDateTime().toString(
+        QStringLiteral("yyyy-MM-dd HH:mm"));
+    const QString computer = qEnvironmentVariable("COMPUTERNAME");
+
+    QString scoreClass = QStringLiteral("ok");
+    if (m_healthScore < 60)
+        scoreClass = QStringLiteral("bad");
+    else if (m_healthScore < 75)
+        scoreClass = QStringLiteral("warn");
+    else if (m_healthScore < 90)
+        scoreClass = QStringLiteral("info");
+
+    QString rows;
+    for (const HealthItem &item : m_healthItems) {
+        const QString badge = item.state == QLatin1String("risk") ? QStringLiteral("注意")
+                            : item.state == QLatin1String("warn") ? QStringLiteral("建议")
+                                                                  : QStringLiteral("通过");
+        const QString cls = item.state == QLatin1String("risk") ? QStringLiteral("risk")
+                          : item.state == QLatin1String("warn") ? QStringLiteral("warn")
+                                                                : QStringLiteral("ok");
+        rows += QStringLiteral(
+                    "<tr><td><span class=\"badge %1\">%2</span></td>"
+                    "<td class=\"name\">%3</td><td class=\"detail\">%4</td></tr>\n")
+                    .arg(cls, badge, escapeHtml(item.name), escapeHtml(item.detail));
+    }
+
+    QString html;
+    html += QStringLiteral(
+        "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n"
+        "<title>电脑体检报告</title>\n<style>\n"
+        "body{margin:0;background:#F2F5FA;color:#1E2A3B;"
+        "font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;}\n"
+        ".page{max-width:860px;margin:32px auto;padding:32px 36px;background:#FFFFFF;"
+        "border-radius:16px;box-shadow:0 8px 28px rgba(28,46,80,.10);}\n"
+        "h1{margin:0 0 6px;font-size:24px;}\n"
+        ".meta{margin:0 0 22px;color:#93A0B4;font-size:12px;}\n"
+        ".score{display:flex;align-items:baseline;gap:10px;padding:16px 22px;"
+        "border-radius:12px;margin-bottom:16px;}\n"
+        ".score.ok{background:#E8F7EE;}.score.info{background:#EEF4FE;}"
+        ".score.warn{background:#FFF6E5;}.score.bad{background:#FDECEC;}\n"
+        ".score-num{font-size:40px;font-weight:700;}\n"
+        ".score.ok .score-num{color:#1F8A4C;}.score.info .score-num{color:#2F6FDE;}"
+        ".score.warn .score-num{color:#B7791F;}.score.bad .score-num{color:#C0392B;}\n"
+        ".score-unit{font-size:14px;color:#6B7A93;}\n"
+        ".score-grade{margin-left:auto;font-size:15px;font-weight:600;}\n"
+        ".score.ok .score-grade{color:#1F8A4C;}.score.info .score-grade{color:#2F6FDE;}"
+        ".score.warn .score-grade{color:#B7791F;}.score.bad .score-grade{color:#C0392B;}\n"
+        ".summary{font-size:13px;color:#4A576F;margin:0 0 20px;}\n"
+        "table{width:100%;border-collapse:collapse;font-size:13px;}\n"
+        "th{text-align:left;padding:10px 12px;background:#F7F9FD;color:#5B6980;"
+        "font-weight:600;border-bottom:1px solid #E6ECF6;}\n"
+        "td{padding:12px;border-bottom:1px solid #EEF1F6;vertical-align:top;}\n"
+        ".badge{display:inline-block;padding:3px 8px;border-radius:8px;font-size:11px;"
+        "font-weight:600;white-space:nowrap;}\n"
+        ".badge.ok{background:#E8F7EE;color:#1F8A4C;}"
+        ".badge.warn{background:#FFF6E5;color:#B7791F;}"
+        ".badge.risk{background:#FDECEC;color:#C0392B;}\n"
+        ".name{font-weight:600;white-space:nowrap;}\n"
+        ".detail{color:#7A879B;font-size:12px;}\n"
+        ".footer{margin-top:22px;color:#A6B2C4;font-size:11px;line-height:1.7;}\n"
+        "</style>\n</head>\n<body>\n<div class=\"page\">\n"
+        "<h1>电脑体检报告</h1>\n"
+        "<p class=\"meta\">生成时间：%1　·　电脑名称：%2　·　WindowsTool 电脑工具箱</p>\n"
+        "<div class=\"score %3\"><span class=\"score-num\">%4</span>"
+        "<span class=\"score-unit\">分</span><span class=\"score-grade\">%5</span></div>\n"
+        "<p class=\"summary\">%6</p>\n"
+        "<table>\n<thead><tr><th style=\"width:64px\">结果</th>"
+        "<th style=\"width:110px\">检查项</th><th>说明</th></tr></thead>\n<tbody>\n")
+            .arg(nowText, escapeHtml(computer), scoreClass,
+                 QString::number(m_healthScore), escapeHtml(m_healthGrade),
+                 escapeHtml(m_healthSummaryText));
+    html += rows;
+    html += QStringLiteral(
+        "</tbody>\n</table>\n"
+        "<p class=\"footer\">本报告由 WindowsTool 自动生成，仅供参考。"
+        "若某项显示「注意」，建议按说明处理后重新体检一次。</p>\n"
+        "</div>\n</body>\n</html>\n");
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        showMessage("报告保存失败",
+                    QStringLiteral("无法写入文件：%1\n\n请换一个保存位置再试。").arg(path),
+                    QMessageBox::Warning);
+        return;
+    }
+    file.write(html.toUtf8());
+    file.close();
+
+    appendLog("-------------------");
+    appendLog(QStringLiteral("体检报告已导出：%1").arg(path));
+    showMessage("报告已导出",
+                QStringLiteral("体检报告已保存到：\n%1\n\n"
+                               "用浏览器打开就能查看，也可以发给别人。").arg(path));
 }
 
 // ---------------------------------------------------------------- 开机启动项
@@ -1580,6 +1722,7 @@ void MainWindow::handleStartupList()
         items.append(document.object());
 
     int total = 0;
+    int disabledCount = 0;
     for (const QJsonValue &value : items) {
         if (!value.isObject())
             continue;
@@ -1589,16 +1732,22 @@ void MainWindow::handleStartupList()
         if (name.isEmpty() && command.isEmpty())
             continue;
 
-        addStartupRow(startupSourceLabel(object.value(QStringLiteral("source")).toString()),
-                      name, command);
+        const QString sourceCode = object.value(QStringLiteral("source")).toString();
+        const bool disabled = object.value(QStringLiteral("disabled")).toBool();
+        addStartupRow(startupSourceLabel(sourceCode), name, command, sourceCode, disabled);
         ++total;
+        if (disabled)
+            ++disabledCount;
     }
 
     QString summary;
     if (total == 0)
         summary = QStringLiteral("未发现开机启动项");
+    else if (disabledCount > 0)
+        summary = QStringLiteral("共 %1 项开机启动 · 已关掉 %2 项")
+                      .arg(total).arg(disabledCount);
     else
-        summary = QStringLiteral("共 %1 项开机启动 · 仅展示，暂不支持禁用").arg(total);
+        summary = QStringLiteral("共 %1 项开机启动 · 不需要的可以点「禁用」").arg(total);
 
     ui->startupSummary->setText(summary);
     ui->startupScroll->verticalScrollBar()->setValue(0);
@@ -1607,8 +1756,102 @@ void MainWindow::handleStartupList()
     appendLog(summary);
 }
 
+void MainWindow::runStartupToggle(const QString &action, const QString &source,
+                                  const QString &name, const QString &command)
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/startupToggle.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少启动项脚本",
+                    "未找到 ps1\\startupToggle.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    ++m_flow;
+
+    clearLog();
+    appendLog(action == QLatin1String("disable")
+                  ? QStringLiteral("正在关闭「%1」的开机启动……").arg(name)
+                  : QStringLiteral("正在恢复「%1」的开机启动……").arg(name));
+
+    ui->startupSummary->setText(action == QLatin1String("disable")
+                                    ? QStringLiteral("正在关闭……")
+                                    : QStringLiteral("正在启用……"));
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), action,
+        QStringLiteral("-Source"), source,
+        QStringLiteral("-Name"), name,
+        QStringLiteral("-Command"), command
+    };
+
+    m_task = Task::StartupToggle;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleStartupToggle()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("STARTUP_TOGGLE_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog("修改启动项失败：未能解析脚本输出。");
+        ui->startupSummary->setText(QStringLiteral("修改失败"));
+        showMessage("修改启动项失败",
+                    "没能完成这次修改，请稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject object = document.object();
+    if (object.value(QStringLiteral("ok")).toBool()) {
+        // 成功：重新读一遍列表，让按钮状态和系统实际状态保持一致
+        runStartupList();
+        return;
+    }
+
+    const QString message = object.value(QStringLiteral("message")).toString();
+    QString reason;
+    if (message == QLatin1String("item-missing"))
+        reason = QStringLiteral("找不到这个启动项，可能刚被别的软件删掉了。");
+    else if (message == QLatin1String("record-missing"))
+        reason = QStringLiteral("没有找到之前的关闭记录，可能被手动改过。");
+    else if (message == QLatin1String("access-denied"))
+        reason = QStringLiteral("没有权限修改。\n\n"
+                                "「所有用户」的启动项需要管理员权限："
+                                "请右键本程序，选择「以管理员身份运行」后再试。");
+    else
+        reason = QStringLiteral("修改没有成功。\n\n"
+                                "如果这一项属于「所有用户」，"
+                                "请右键本程序，选择「以管理员身份运行」后再试。");
+
+    ui->startupSummary->setText(QStringLiteral("修改失败"));
+    appendLog("-------------------");
+    appendLog(QStringLiteral("修改启动项失败：%1").arg(message));
+    showMessage("修改启动项失败", reason, QMessageBox::Warning);
+}
+
 void MainWindow::addStartupRow(const QString &source, const QString &name,
-                               const QString &command)
+                               const QString &command, const QString &sourceCode,
+                               bool disabled)
 {
     QWidget *row = new QWidget(ui->startupRows);
     QHBoxLayout *layout = new QHBoxLayout(row);
@@ -1622,12 +1865,13 @@ void MainWindow::addStartupRow(const QString &source, const QString &name,
 
     QLabel *title = new QLabel(name.isEmpty() ? QStringLiteral("(未命名)") : name, row);
     title->setObjectName(QStringLiteral("startupName"));
+    title->setWordWrap(true);
 
     QLabel *desc = new QLabel(command, row);
     desc->setObjectName(QStringLiteral("startupCommand"));
     desc->setWordWrap(true);
     desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    desc->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    desc->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
 
     QVBoxLayout *text = new QVBoxLayout;
     text->setContentsMargins(0, 0, 0, 0);
@@ -1635,8 +1879,33 @@ void MainWindow::addStartupRow(const QString &source, const QString &name,
     text->addWidget(title);
     text->addWidget(desc);
 
+    const QString displayName = name.isEmpty() ? QStringLiteral("(未命名)") : name;
+    QPushButton *toggle = new QPushButton(disabled ? QStringLiteral("启用")
+                                                   : QStringLiteral("禁用"), row);
+    toggle->setObjectName(QStringLiteral("startupToggleBtn"));
+    toggle->setProperty("disabledState", disabled);
+    toggle->setFixedWidth(56);
+    toggle->setMinimumHeight(26);
+    toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    toggle->setCursor(Qt::PointingHandCursor);
+
+    const QString action = disabled ? QStringLiteral("enable") : QStringLiteral("disable");
+    connect(toggle, &QPushButton::clicked, this,
+            [this, action, sourceCode, name, command, displayName, disabled]() {
+                if (!disabled) {
+                    if (!confirmAction("关闭开机启动",
+                                       QStringLiteral("关闭后，「%1」开机时不会再自动运行，"
+                                                      "随时可以点「启用」恢复。\n\n继续吗？")
+                                           .arg(displayName))) {
+                        return;
+                    }
+                }
+                runStartupToggle(action, sourceCode, name, command);
+            });
+
     layout->addWidget(badge, 0, Qt::AlignTop);
     layout->addLayout(text, 1);
+    layout->addWidget(toggle, 0, Qt::AlignTop);
 
     ui->startupRowsLayout->addWidget(row);
 }
