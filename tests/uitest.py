@@ -1,3 +1,9 @@
+# Copyright (c) 2023 素曜
+# SPDX-License-Identifier: MIT
+#
+# This file is part of WindowsTool and is distributed under the MIT License.
+# See the LICENSE file in the project root for the full license text.
+
 """
 WindowsTool 界面回归测试（无需调试器）。
 

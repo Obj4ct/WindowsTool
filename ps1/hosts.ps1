@@ -1,3 +1,9 @@
+﻿# Copyright (c) 2023 素曜
+# SPDX-License-Identifier: MIT
+#
+# This file is part of WindowsTool and is distributed under the MIT License.
+# See the LICENSE file in the project root for the full license text.
+
 param(
     [ValidateSet('read', 'save', 'restore')][string]$Action = 'read',
     [string]$Source = '',
@@ -8,9 +14,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-# NOTE: this script is deliberately ASCII-only. PowerShell 5.1 reads BOM-less
-# .ps1 files as ANSI, so Chinese text would be mangled. User-facing messages are
-# built in Qt from the short "code" values emitted here.
+# NOTE: the body of this script is deliberately ASCII-only. The file itself is
+# saved as UTF-8 with BOM, so PowerShell 5.1 decodes the copyright header
+# correctly. User-facing messages are built in Qt from the short "code" values
+# emitted here.
 
 $hostsPath = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
 $backupDir = Join-Path $env:ProgramData 'WindowsTool\hosts-backup'

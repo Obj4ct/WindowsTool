@@ -1,0 +1,31 @@
+WindowsTool NOTICE
+
+Copyright (c) 2023 素曜
+
+一、项目内容许可
+----------------
+本项目源码、脚本、界面样式、文档以及 resources/ 下的图标与图片资源，
+除本文件另有说明外，均由 Copyright (c) 2023 素曜 创作并采用 MIT 许可。
+完整许可文本见项目根目录的 LICENSE 文件。
+
+二、无法附加版权注释的文件
+--------------------------
+以下文件属于二进制或资源格式，无法在文件内部写入版权注释，其版权归属
+以上述第一条为准：
+
+- resources/tool.ico                 程序图标
+- resources/ico/attention.png        界面图标
+- resources/ico/cool.png             界面图标
+- resources/ico/cry.png              界面图标
+- resources/ico/kiss.png             界面图标
+- resources/ico/question.png         界面图标
+- resources/ico/scared.png           界面图标
+- resources/ico/toolBox.png          界面图标
+- resources/ico/what.png             界面图标
+
+三、第三方组件
+--------------
+- Qt 5.15.2（Qt Company）：按 LGPLv3 / GPLv3 授权，本项目与其动态链接。
+  再分发可执行文件时，请一并遵守 Qt 的许可条款（随附许可文本并提供
+  获取 Qt 源码的方式）。Qt 不因本项目采用 MIT 而改变其自身许可。
+- 微软 Windows 系统组件、PowerShell、CMD 及 iphlpapi：按微软相应条款使用。
