@@ -306,7 +306,8 @@ MainWindow::MainWindow(QWidget *parent)
                     || m_task == Task::FileLock || m_task == Task::BootTime
                     || m_task == Task::ContextMenuList
                     || m_task == Task::ContextMenuToggle
-                    || m_task == Task::SfcRepair)
+                    || m_task == Task::SfcRepair
+                    || m_task == Task::WUpdateRepair)
                     return;
                 appendLog(text);
             });
@@ -399,7 +400,7 @@ void MainWindow::setupTheme()
     ui->btn_fixWhite->setIcon(tileIcon(UiIcons::Icon::Picture));
     ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
     ui->btn_sfc->setIcon(tileIcon(UiIcons::Icon::ShieldCheck));
-    ui->btn_wupdate->setIcon(grayIcon(UiIcons::Icon::Refresh));
+    ui->btn_wupdate->setIcon(tileIcon(UiIcons::Icon::Refresh));
     ui->btn_bsod->setIcon(grayIcon(UiIcons::Icon::Info));
 
     // 硬件监控
@@ -629,10 +630,6 @@ void MainWindow::wirePlaceholderTile(QToolButton *tile, const QString &title,
 
 void MainWindow::setupPlaceholders()
 {
-    wirePlaceholderTile(ui->btn_wupdate,
-                        "Windows 更新修复",
-                        "将重置更新组件与缓存，用于解决更新失败、"
-                        "一直停在检查更新、错误代码 0x80070002 等情况。");
     wirePlaceholderTile(ui->btn_bsod,
                         "蓝屏分析",
                         "将读取最近一次崩溃的转储文件，定位可能引发蓝屏的"
@@ -853,6 +850,9 @@ void MainWindow::onTaskFinished(int exitCode)
     case Task::SfcRepair:
         handleSfcRepair(exitCode);
         break;
+    case Task::WUpdateRepair:
+        handleWUpdateFix(exitCode);
+        break;
     case Task::NetInfo:
         handleNetworkInfo();
         break;
@@ -875,6 +875,15 @@ void MainWindow::onTaskFailed(const QString &reason)
         ui->sfcSummary->setProperty("state", QStringLiteral("risk"));
         ui->sfcSummary->style()->unpolish(ui->sfcSummary);
         ui->sfcSummary->style()->polish(ui->sfcSummary);
+    }
+
+    if (m_task == Task::WUpdateRepair) {
+        ui->btnWUpdateFix->setEnabled(true);
+        ui->wupdateSummary->setText(
+            QStringLiteral("重置未能启动或异常中断：%1").arg(reason));
+        ui->wupdateSummary->setProperty("state", QStringLiteral("risk"));
+        ui->wupdateSummary->style()->unpolish(ui->wupdateSummary);
+        ui->wupdateSummary->style()->polish(ui->wupdateSummary);
     }
 
     appendLog("-------------------");
@@ -1157,6 +1166,21 @@ void MainWindow::setupSystem()
     connect(ui->btnDismRepair, &QPushButton::clicked, this, [this]() {
         runSfcRepair(QStringLiteral("dism"));
     });
+
+    // Windows 更新修复：点磁贴展开/收起卡片，卡片内按钮启动重置
+    connect(ui->btn_wupdate, &QAbstractButton::clicked, this, [this]() {
+        if (m_task == Task::WUpdateRepair) {
+            showSystemResultCard(ui->cardWUpdate);
+            return;
+        }
+        if (ui->cardWUpdate->isVisible()) {
+            ui->cardWUpdate->setVisible(false);
+            return;
+        }
+        showSystemResultCard(ui->cardWUpdate);
+    });
+    connect(ui->btnWUpdateFix, &QPushButton::clicked,
+            this, &MainWindow::runWUpdateFix);
 
     // 开机启动项（只读）
     connect(ui->btn_startup, &QAbstractButton::clicked,
@@ -1827,6 +1851,7 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardBattery->setVisible(card == ui->cardBattery);
     ui->cardDup->setVisible(card == ui->cardDup);
     ui->cardSfc->setVisible(card == ui->cardSfc);
+    ui->cardWUpdate->setVisible(card == ui->cardWUpdate);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
@@ -4356,6 +4381,109 @@ void MainWindow::setSfcRunning(bool running)
 {
     ui->btnSfcScan->setEnabled(!running);
     ui->btnDismRepair->setEnabled(!running);
+}
+
+// ---------------------------------------------------------------- Windows 更新修复
+
+void MainWindow::runWUpdateFix()
+{
+    if (m_task == Task::WUpdateRepair)
+        return;
+
+    if (!batExists("winUpdateFix.bat")) {
+        showMessage("缺少脚本文件",
+                    "未找到所需的脚本文件 winUpdateFix.bat。\n\n"
+                    "请确认程序目录下的 bat 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    if (!confirmAction(
+            "重置 Windows 更新组件",
+            QStringLiteral("将停止 Windows Update 相关服务，把 SoftwareDistribution 与 "
+                           "catroot2 缓存目录重命名为带时间戳的 .bak 备份，"
+                           "然后重新启动这些服务。\n\n"
+                           "旧目录不会被删除，需要时可手动改回原文件名恢复。\n"
+                           "执行期间 Windows 更新暂时不可用，浏览器上网不受影响，"
+                           "整个过程约需 1-3 分钟。\n\n"
+                           "开始时会弹出管理员权限请求，请选择「是」。\n\n"
+                           "是否继续？")))
+        return;
+
+    ++m_flow;
+
+    const QString logPath = QDir(QDir::tempPath())
+                                .filePath(QStringLiteral("wt_wupdate.log"));
+    // 先删旧日志，避免上一次的结果混进本次展示
+    QFile::remove(logPath);
+
+    m_updateLogPath = logPath;
+    ui->wupdateLog->clear();
+    ui->wupdateSummary->setText(
+        QStringLiteral("正在重置更新组件，请稍候……"));
+    ui->wupdateSummary->setProperty("state", QString());
+    ui->wupdateSummary->style()->unpolish(ui->wupdateSummary);
+    ui->wupdateSummary->style()->polish(ui->wupdateSummary);
+    showSystemResultCard(ui->cardWUpdate);
+
+    ui->btnWUpdateFix->setEnabled(false);
+
+    appendLog("-------------------");
+    appendLog("正在重置 Windows 更新组件，请稍候……");
+
+    m_task = Task::WUpdateRepair;
+    m_runner->runBat("winUpdateFix.bat",
+                     {QDir::toNativeSeparators(logPath)});
+}
+
+void MainWindow::handleWUpdateFix(int exitCode)
+{
+    ui->btnWUpdateFix->setEnabled(true);
+
+    // 脚本输出写在日志文件里，结束后一次性读取展示
+    QFile file(m_updateLogPath);
+    if (file.open(QIODevice::ReadOnly)) {
+        const QString text = decodeLogFile(file.readAll()).trimmed();
+        file.close();
+        if (!text.isEmpty()) {
+            QTextCursor cursor(ui->wupdateLog->document());
+            cursor.movePosition(QTextCursor::End);
+            cursor.insertText(text);
+            ui->wupdateLog->setTextCursor(cursor);
+            ui->wupdateLog->ensureCursorVisible();
+        }
+    }
+
+    QString state;
+    if (exitCode == 0) {
+        state = QStringLiteral("ok");
+        ui->wupdateSummary->setText(
+            QStringLiteral("更新组件已重置。旧缓存已重命名为带时间戳的 .bak，"
+                           "需要时可在 C:\\Windows 下手动恢复。建议重启计算机后"
+                           "再检查一次更新。"));
+        appendLog("-------------------");
+        appendLog("Windows 更新组件重置完成。");
+    } else {
+        state = QStringLiteral("risk");
+        ui->wupdateSummary->setText(
+            QStringLiteral("重置未全部完成（退出码 %1）。若日志中没有有效内容，"
+                           "通常是取消了管理员权限请求；否则请检查日志中是否有"
+                           "目录被占用或权限不足的提示。")
+                .arg(exitCode));
+        appendLog("-------------------");
+        appendLog(QStringLiteral("Windows 更新组件重置未完成，退出码：%1").arg(exitCode));
+        showMessage("Windows 更新修复未完成",
+                    QStringLiteral("退出码为 %1。\n\n"
+                                   "若刚刚取消了管理员权限请求，重新点击按钮并在"
+                                   "弹窗中选择「是」即可；其他情况请查看卡片中的日志。")
+                        .arg(exitCode),
+                    QMessageBox::Warning);
+    }
+
+    ui->wupdateSummary->setProperty("state", state);
+    ui->wupdateSummary->style()->unpolish(ui->wupdateSummary);
+    ui->wupdateSummary->style()->polish(ui->wupdateSummary);
+    m_updateLogPath.clear();
 }
 
 // ---------------------------------------------------------------- 通用工具

@@ -102,7 +102,7 @@
 #cardStartup, #cardPorts, #cardLargeFiles, #cardDiskHealth, #cardHwinfo,
 #cardProcesses, #cardDiskUsage, #cardUninstall, #cardDrivers, #cardHosts,
 #cardDns, #cardMonitor, #cardShortcuts, #cardBattery, #cardDup,
-#cardContextMenu, #cardBootTime, #cardFileLock, #cardSfc {
+#cardContextMenu, #cardBootTime, #cardFileLock, #cardSfc, #cardWUpdate {
     background: #FFFFFF;
     border: 1px solid #E6EAF2;
     border-radius: 16px;
@@ -113,7 +113,7 @@
 #healthTitle, #startupTitle, #portsTitle, #largeFilesTitle, #diskHealthTitle,
 #hwinfoTitle, #processesTitle, #diskUsageTitle, #uninstallTitle, #driversTitle,
 #hostsTitle, #dnsTitle, #monitorTitle, #batteryTitle, #dupTitle, #cardTitleTool,
-#contextMenuTitle, #bootTimeTitle, #fileLockTitle, #sfcTitle {
+#contextMenuTitle, #bootTimeTitle, #fileLockTitle, #sfcTitle, #wupdateTitle {
     color: #1B2637;
     font-size: 15px;
     font-weight: 600;
@@ -130,7 +130,7 @@
 #btn_quickHealth, #btn_quickNetwork, #btn_quickPorts, #btn_quickDisk,
 #btn_autoCheck, #btn_showNetWork, #btn_netWorkTest, #btn_ports,
 #btn_hosts, #btn_dns,
-#btn_cleaner, #btn_fixWhite, #btn_healthCheck, #btn_sfc,
+#btn_cleaner, #btn_fixWhite, #btn_healthCheck, #btn_sfc, #btn_wupdate,
 #btn_diskHealth, #btn_hwinfo, #btn_monitor, #btn_startup, #btn_process, #btn_uninstall,
 #btn_drivers, #btn_largeFiles, #btn_treedisk, #btn_prt, #btn_dup,
 #btn_contextMenu, #btn_bootTime, #btn_fileLock {
@@ -145,7 +145,7 @@
 #btn_quickHealth:hover, #btn_quickNetwork:hover, #btn_quickPorts:hover, #btn_quickDisk:hover,
 #btn_autoCheck:hover, #btn_showNetWork:hover, #btn_netWorkTest:hover, #btn_ports:hover,
 #btn_hosts:hover, #btn_dns:hover,
-#btn_cleaner:hover, #btn_fixWhite:hover, #btn_healthCheck:hover, #btn_sfc:hover,
+#btn_cleaner:hover, #btn_fixWhite:hover, #btn_healthCheck:hover, #btn_sfc:hover, #btn_wupdate:hover,
 #btn_diskHealth:hover, #btn_hwinfo:hover, #btn_monitor:hover, #btn_startup:hover, #btn_process:hover,
 #btn_uninstall:hover, #btn_drivers:hover,
 #btn_largeFiles:hover, #btn_treedisk:hover, #btn_prt:hover, #btn_dup:hover,
@@ -157,7 +157,7 @@
 #btn_quickHealth:pressed, #btn_quickNetwork:pressed, #btn_quickPorts:pressed, #btn_quickDisk:pressed,
 #btn_autoCheck:pressed, #btn_showNetWork:pressed, #btn_netWorkTest:pressed, #btn_ports:pressed,
 #btn_hosts:pressed, #btn_dns:pressed,
-#btn_cleaner:pressed, #btn_fixWhite:pressed, #btn_healthCheck:pressed, #btn_sfc:pressed,
+#btn_cleaner:pressed, #btn_fixWhite:pressed, #btn_healthCheck:pressed, #btn_sfc:pressed, #btn_wupdate:pressed,
 #btn_diskHealth:pressed, #btn_hwinfo:pressed, #btn_monitor:pressed, #btn_startup:pressed, #btn_process:pressed,
 #btn_uninstall:pressed, #btn_drivers:pressed,
 #btn_largeFiles:pressed, #btn_treedisk:pressed, #btn_prt:pressed, #btn_dup:pressed,
@@ -166,7 +166,7 @@
     border-color: #8FB4EE;
 }
 #btn_autoCheck:disabled, #btn_showNetWork:disabled, #btn_netWorkTest:disabled, #btn_ports:disabled, #btn_hosts:disabled, #btn_dns:disabled,
-#btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled, #btn_sfc:disabled, #btn_startup:disabled, #btn_hwinfo:disabled, #btn_monitor:disabled, #btn_process:disabled, #btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled, #btn_diskHealth:disabled, #btn_prt:disabled, #btn_dup:disabled, #btn_contextMenu:disabled, #btn_bootTime:disabled, #btn_fileLock:disabled {
+#btn_cleaner:disabled, #btn_fixWhite:disabled, #btn_healthCheck:disabled, #btn_sfc:disabled, #btn_wupdate:disabled, #btn_startup:disabled, #btn_hwinfo:disabled, #btn_monitor:disabled, #btn_process:disabled, #btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled, #btn_treedisk:disabled, #btn_diskHealth:disabled, #btn_prt:disabled, #btn_dup:disabled, #btn_contextMenu:disabled, #btn_bootTime:disabled, #btn_fileLock:disabled {
     background: #F7F8FA;
     border-color: #EAEEF4;
     color: #B6BFCC;
@@ -911,18 +911,18 @@ QToolButton[placeholder="true"]:pressed {
 }
 
 /* ---------------- 系统文件修复（SFC / DISM） ---------------- */
-#sfcSummary {
+#sfcSummary, #wupdateSummary {
     color: #4A576F;
     font-size: 13px;
 }
-#sfcSummary[state="ok"] {
+#sfcSummary[state="ok"], #wupdateSummary[state="ok"] {
     color: #1F8A4C;
 }
-#sfcSummary[state="risk"] {
+#sfcSummary[state="risk"], #wupdateSummary[state="risk"] {
     color: #C0392B;
 }
 
-#btnSfcScan {
+#btnSfcScan, #btnWUpdateFix {
     background: #4A8CFF;
     border: 1px solid #4A8CFF;
     border-radius: 9px;
@@ -931,11 +931,11 @@ QToolButton[placeholder="true"]:pressed {
     font-weight: 600;
     padding: 0 18px;
 }
-#btnSfcScan:hover {
+#btnSfcScan:hover, #btnWUpdateFix:hover {
     background: #2B6CD4;
     border-color: #2B6CD4;
 }
-#btnSfcScan:pressed {
+#btnSfcScan:pressed, #btnWUpdateFix:pressed {
     background: #245BB8;
     border-color: #245BB8;
 }
@@ -957,13 +957,13 @@ QToolButton[placeholder="true"]:pressed {
     background: #EAF1FC;
 }
 
-#btnSfcScan:disabled, #btnDismRepair:disabled {
+#btnSfcScan:disabled, #btnDismRepair:disabled, #btnWUpdateFix:disabled {
     background: #E7ECF4;
     border-color: #E7ECF4;
     color: #B6BFCC;
 }
 
-#sfcLog {
+#sfcLog, #wupdateLog {
     background: #101725;
     border: none;
     border-radius: 10px;

@@ -66,7 +66,8 @@ private:
         BootTime,        ///< 开机耗时分析（boottime.ps1）
         ContextMenuList, ///< 右键菜单项枚举（contextmenu.ps1 list）
         ContextMenuToggle, ///< 禁用/启用右键菜单项（contextmenu.ps1 disable/enable）
-        SfcRepair        ///< 系统文件修复（sfcRepair.bat sfc/dism）
+        SfcRepair,       ///< 系统文件修复（sfcRepair.bat sfc/dism）
+        WUpdateRepair    ///< Windows 更新修复（winUpdateFix.bat）
     };
 
     void setupTheme();
@@ -227,6 +228,10 @@ private:
     void appendSfcLog(const QString &text);
     void setSfcRunning(bool running);
 
+    // Windows 更新修复
+    void runWUpdateFix();
+    void handleWUpdateFix(int exitCode);
+
     /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
     void showSystemResultCard(QWidget *card);
 
@@ -256,6 +261,9 @@ private:
     qint64 m_sfcLogBytes = 0;
     int m_sfcLogChars = 0;
     QTimer *m_sfcTimer = nullptr;
+
+    /** Windows 更新修复：脚本日志路径，结束后一次性读入卡片展示 */
+    QString m_updateLogPath;
 
     /** CPU/内存/磁盘/网络实时采样器 */
     SysMonitor *m_monitor = nullptr;
