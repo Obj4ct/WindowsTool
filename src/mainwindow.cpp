@@ -19,6 +19,7 @@
 #include <QFileInfo>
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsOpacityEffect>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -39,6 +40,7 @@
 #include <QTextDocument>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QToolButton>
 #include <QUrl>
@@ -619,6 +621,7 @@ void MainWindow::setupNavigation()
         {ui->navHardwareBtn, 3},
         {ui->navManageBtn, 4},
         {ui->navToolsBtn, 5},
+        {ui->navOperationsBtn, 6},
     };
 
     for (const auto &entry : entries) {
@@ -637,10 +640,14 @@ void MainWindow::showPage(int index)
     QPushButton *buttons[] = {
         ui->navOverviewBtn, ui->navNetworkBtn, ui->navSystemBtn,
         ui->navHardwareBtn, ui->navManageBtn, ui->navToolsBtn,
+        ui->navOperationsBtn,
     };
     const int count = int(sizeof(buttons) / sizeof(buttons[0]));
     if (index >= 0 && index < count)
         buttons[index]->setChecked(true);
+
+    if (index == 6)
+        refreshOperationPage();
 
     // 页面切换做一次短暂淡入，替代生硬的整页硬切
     if (QWidget *page = ui->stackedWidget->currentWidget()) {
@@ -656,6 +663,283 @@ void MainWindow::showPage(int index)
             page->setGraphicsEffect(nullptr);
         });
         anim->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+}
+
+// ---------------------------------------------------------------- 操作记录
+
+QString MainWindow::operationsFilePath() const
+{
+    const QString dir = QStandardPaths::writableLocation(
+        QStandardPaths::AppLocalDataLocation);
+    return QDir(dir).filePath(QStringLiteral("operations.jsonl"));
+}
+
+void MainWindow::recordOperation(const QString &feature, const QString &action,
+                                 const QString &target, bool ok,
+                                 bool undoable, const QString &undoKind,
+                                 const QJsonObject &undoArgs)
+{
+    const QString path = operationsFilePath();
+    if (!QDir().mkpath(QFileInfo(path).absolutePath())) {
+        appendLog(QStringLiteral("操作记录目录创建失败：%1").arg(path));
+        return;
+    }
+
+    static int sequence = 0;
+    const QDateTime now = QDateTime::currentDateTime();
+    const QString id = now.toString(QStringLiteral("yyyyMMdd-HHmmss-zzz"))
+                       + QLatin1Char('-') + QString::number(++sequence);
+
+    QJsonObject object;
+    object.insert(QStringLiteral("kind"), QStringLiteral("op"));
+    object.insert(QStringLiteral("id"), id);
+    object.insert(QStringLiteral("time"),
+                  now.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+    object.insert(QStringLiteral("feature"), feature);
+    object.insert(QStringLiteral("action"), action);
+    object.insert(QStringLiteral("target"), target);
+    object.insert(QStringLiteral("ok"), ok);
+    object.insert(QStringLiteral("undoable"), undoable);
+    if (undoable) {
+        object.insert(QStringLiteral("undoKind"), undoKind);
+        object.insert(QStringLiteral("undoArgs"), undoArgs);
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+        appendLog(QStringLiteral("操作记录写入失败：%1").arg(file.errorString()));
+        return;
+    }
+    file.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    file.write("\n");
+    file.close();
+
+    refreshOperationPage();
+}
+
+QList<MainWindow::OperationRecord> MainWindow::readOperationRecords() const
+{
+    QList<OperationRecord> records;
+    QHash<QString, int> indexById;
+
+    QFile file(operationsFilePath());
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return records;
+
+    while (!file.atEnd()) {
+        const QByteArray line = file.readLine().trimmed();
+        if (line.isEmpty())
+            continue;
+
+        QJsonParseError parseError{};
+        const QJsonDocument document = QJsonDocument::fromJson(line, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !document.isObject())
+            continue;
+
+        const QJsonObject object = document.object();
+        if (object.value(QStringLiteral("kind")).toString()
+            == QLatin1String("undo")) {
+            const int index = indexById.value(
+                object.value(QStringLiteral("id")).toString(), -1);
+            if (index >= 0)
+                records[index].undone = true;
+            continue;
+        }
+
+        OperationRecord record;
+        record.id = object.value(QStringLiteral("id")).toString();
+        record.time = object.value(QStringLiteral("time")).toString();
+        record.feature = object.value(QStringLiteral("feature")).toString();
+        record.action = object.value(QStringLiteral("action")).toString();
+        record.target = object.value(QStringLiteral("target")).toString();
+        record.ok = object.value(QStringLiteral("ok")).toBool();
+        record.undoable = object.value(QStringLiteral("undoable")).toBool();
+        record.undoKind = object.value(QStringLiteral("undoKind")).toString();
+        record.undoArgsJson = QString::fromUtf8(
+            QJsonDocument(object.value(QStringLiteral("undoArgs")).toObject())
+                .toJson(QJsonDocument::Compact));
+
+        indexById.insert(record.id, records.size());
+        records.append(record);
+    }
+
+    // 新记录显示在最上面
+    QList<OperationRecord> ordered;
+    ordered.reserve(records.size());
+    for (int i = records.size() - 1; i >= 0; --i)
+        ordered.append(records.at(i));
+    return ordered;
+}
+
+void MainWindow::markOperationUndone(const QString &id)
+{
+    if (id.isEmpty())
+        return;
+
+    const QString path = operationsFilePath();
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+        appendLog(QStringLiteral("撤销状态写入失败：%1").arg(file.errorString()));
+        return;
+    }
+
+    QJsonObject object;
+    object.insert(QStringLiteral("kind"), QStringLiteral("undo"));
+    object.insert(QStringLiteral("id"), id);
+    object.insert(QStringLiteral("time"),
+                  QDateTime::currentDateTime().toString(
+                      QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+    file.write(QJsonDocument(object).toJson(QJsonDocument::Compact));
+    file.write("\n");
+    file.close();
+}
+
+void MainWindow::refreshOperationPage()
+{
+    while (QLayoutItem *item = ui->operationsRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+
+    const QList<OperationRecord> records = readOperationRecords();
+    int undoableCount = 0;
+    for (const OperationRecord &record : records) {
+        if (record.undoable && !record.undone)
+            ++undoableCount;
+    }
+
+    ui->operationsEmpty->setVisible(records.isEmpty());
+    ui->operationsSummary->setText(
+        QStringLiteral("共 %1 条记录 · 可撤销 %2 条")
+            .arg(records.size()).arg(undoableCount));
+
+    for (const OperationRecord &record : records)
+        addOperationRow(record);
+
+    ui->operationsScroll->verticalScrollBar()->setValue(0);
+}
+
+void MainWindow::addOperationRow(const OperationRecord &record)
+{
+    QFrame *row = new QFrame(ui->operationsRows);
+    row->setObjectName(QStringLiteral("operationRow"));
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(10);
+
+    QLabel *time = new QLabel(record.time, row);
+    time->setObjectName(QStringLiteral("operationsTime"));
+    time->setFixedWidth(132);
+
+    QLabel *badge = new QLabel(record.feature, row);
+    badge->setObjectName(QStringLiteral("operationsBadge"));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(80);
+
+    QLabel *action = new QLabel(record.action, row);
+    action->setObjectName(QStringLiteral("operationsAction"));
+    action->setWordWrap(true);
+
+    QLabel *target = new QLabel(record.target, row);
+    target->setObjectName(QStringLiteral("operationsTarget"));
+    target->setWordWrap(true);
+    target->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    target->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(action);
+    if (!record.target.isEmpty())
+        text->addWidget(target);
+
+    QString statusText = QStringLiteral("不可恢复");
+    QString statusState = QStringLiteral("irreversible");
+    if (record.undone) {
+        statusText = QStringLiteral("已撤销");
+        statusState = QStringLiteral("undone");
+    } else if (record.undoable) {
+        statusText = QStringLiteral("成功");
+        statusState = QStringLiteral("ok");
+    }
+
+    QLabel *status = new QLabel(statusText, row);
+    status->setObjectName(QStringLiteral("operationsStatus"));
+    status->setProperty("state", statusState);
+    status->setAlignment(Qt::AlignCenter);
+    status->setFixedWidth(62);
+
+    bool canUndo = record.undoable && !record.undone;
+    const QJsonObject undoArgs = QJsonDocument::fromJson(
+        record.undoArgsJson.toUtf8()).object();
+    if (canUndo && record.undoKind == QLatin1String("hosts-save"))
+        canUndo = !undoArgs.value(QStringLiteral("backup")).toString().isEmpty();
+    if (canUndo && record.undoKind == QLatin1String("hosts-restore"))
+        canUndo = QFileInfo(undoArgs.value(QStringLiteral("source")).toString())
+                      .exists();
+
+    layout->addWidget(time, 0, Qt::AlignTop);
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+    layout->addWidget(status, 0, Qt::AlignTop);
+
+    if (canUndo) {
+        QPushButton *undo = new QPushButton(QStringLiteral("撤销"), row);
+        undo->setObjectName(QStringLiteral("operationsUndoBtn"));
+        undo->setCursor(Qt::PointingHandCursor);
+        undo->setFixedSize(56, 26);
+        connect(undo, &QPushButton::clicked, this,
+                [this, record]() { startUndo(record); });
+        layout->addWidget(undo, 0, Qt::AlignTop);
+    }
+
+    ui->operationsRowsLayout->addWidget(row);
+}
+
+void MainWindow::startUndo(const OperationRecord &record)
+{
+    QString detail = QStringLiteral("将撤销「%1 · %2」。")
+                         .arg(record.feature, record.action);
+    if (!record.target.isEmpty())
+        detail += QStringLiteral("\n目标：%1").arg(record.target);
+    detail += QStringLiteral("\n\n会尽量把系统恢复到操作前的状态，继续吗？");
+
+    if (!confirmAction("撤销操作", detail))
+        return;
+
+    if (!claimTask(QStringLiteral("撤销操作")))
+        return;
+
+    const QJsonObject args = QJsonDocument::fromJson(
+        record.undoArgsJson.toUtf8()).object();
+
+    m_undoId = record.id;
+    m_undoKind = record.undoKind;
+
+    if (record.undoKind == QLatin1String("startup")) {
+        runStartupToggle(args.value(QStringLiteral("action")).toString(),
+                         args.value(QStringLiteral("source")).toString(),
+                         args.value(QStringLiteral("name")).toString(),
+                         args.value(QStringLiteral("command")).toString());
+    } else if (record.undoKind == QLatin1String("contextmenu")) {
+        m_cmDisplay = args.value(QStringLiteral("display")).toString();
+        if (m_cmDisplay.isEmpty())
+            m_cmDisplay = args.value(QStringLiteral("entry")).toString();
+        runContextMenuToggle(args.value(QStringLiteral("root")).toString(),
+                             args.value(QStringLiteral("scope")).toString(),
+                             args.value(QStringLiteral("entry")).toString(),
+                             args.value(QStringLiteral("disable")).toBool());
+    } else if (record.undoKind == QLatin1String("hosts-save")) {
+        m_hostsBackup = args.value(QStringLiteral("backup")).toString();
+        runHostsWrite(QStringLiteral("restore"), QString());
+    } else if (record.undoKind == QLatin1String("hosts-restore")) {
+        runHostsWrite(QStringLiteral("save"),
+                      args.value(QStringLiteral("source")).toString());
+    } else {
+        m_undoId.clear();
+        m_undoKind.clear();
     }
 }
 
@@ -795,11 +1079,17 @@ void MainWindow::dispatchTaskFinished(int exitCode)
         handleDnsCheck();
         break;
     case Task::FixDnsAuto:
+        recordOperation(QStringLiteral("网络修复"),
+                       QStringLiteral("刷新网络配置（改回自动获取）"),
+                       QStringLiteral("当前默认网卡"), true);
         askNetworkRecovered();
         break;
     case Task::FixDnsManual:
         appendLog("-------------------");
         appendLog("网络设置已刷新");
+        recordOperation(QStringLiteral("网络修复"),
+                        QStringLiteral("刷新网络配置（改回自动获取）"),
+                        QStringLiteral("当前默认网卡"), true);
         showMessage("网络设置已刷新",
                     "已经把 DNS 改回「自动获取」，并清空了本机的 DNS 缓存。\n\n"
                     "如果还是上不了网，重启电脑后再试一次。");
@@ -807,17 +1097,26 @@ void MainWindow::dispatchTaskFinished(int exitCode)
     case Task::Cleaner:
         appendLog("-------------------");
         appendLog("系统临时文件清理完成");
+        recordOperation(QStringLiteral("系统清理"),
+                        QStringLiteral("清理系统临时文件"),
+                        QStringLiteral("系统临时目录"), true);
         showMessage("清理完成", "系统临时文件已清理完毕。");
         break;
     case Task::WinsockReset:
         appendLog("-------------------");
         appendLog("网络组件已重置，重启电脑后生效");
+        recordOperation(QStringLiteral("网络修复"),
+                        QStringLiteral("重置网络组件（Winsock）"),
+                        QStringLiteral("本机网络协议栈"), true);
         showMessage("网络组件已重置",
                     "网络组件已经重新初始化，重启电脑后才会完全生效。");
         break;
     case Task::FixWhite:
         appendLog("-------------------");
         appendLog("桌面图标缓存重建完成");
+        recordOperation(QStringLiteral("系统清理"),
+                        QStringLiteral("重建桌面图标缓存"),
+                        QStringLiteral("资源管理器图标缓存"), true);
         showMessage("图标缓存已重建",
                     "桌面图标缓存已重建完成。\n\n"
                     "若图标仍未恢复，可重启资源管理器或重启计算机后再查看。");
@@ -919,6 +1218,11 @@ void MainWindow::dispatchTaskFinished(int exitCode)
 
 void MainWindow::onTaskFailed(const QString &reason)
 {
+    m_undoId.clear();
+    m_undoKind.clear();
+    m_hostsBackup.clear();
+    m_hostsUndoSource.clear();
+
     if (m_task == Task::SfcRepair) {
         if (m_sfcTimer)
             m_sfcTimer->stop();
@@ -1904,6 +2208,11 @@ void MainWindow::runStartupToggle(const QString &action, const QString &source,
     if (!claimTask(QStringLiteral("修改开机启动项")))
         return;
 
+    m_startupAction = action;
+    m_startupSource = source;
+    m_startupName = name;
+    m_startupCommand = command;
+
     ++m_flow;
 
     clearLog();
@@ -1957,10 +2266,42 @@ void MainWindow::handleStartupToggle()
 
     const QJsonObject object = document.object();
     if (object.value(QStringLiteral("ok")).toBool()) {
-        // 成功：重新读一遍列表，让按钮状态和系统实际状态保持一致
-        runStartupList();
+        if (!m_undoId.isEmpty()) {
+            const QString undoId = m_undoId;
+            m_undoId.clear();
+            m_undoKind.clear();
+            markOperationUndone(undoId);
+            refreshOperationPage();
+            showMessage("已撤销",
+                        QStringLiteral("启动项已恢复到操作前的状态，正在刷新列表。"));
+        } else {
+            QJsonObject undoArgs;
+            undoArgs.insert(QStringLiteral("action"),
+                            m_startupAction == QLatin1String("disable")
+                                ? QStringLiteral("enable")
+                                : QStringLiteral("disable"));
+            undoArgs.insert(QStringLiteral("source"), m_startupSource);
+            undoArgs.insert(QStringLiteral("name"), m_startupName);
+            undoArgs.insert(QStringLiteral("command"), m_startupCommand);
+
+            const QString display = m_startupName.isEmpty() ? m_startupCommand
+                                                            : m_startupName;
+            recordOperation(
+                QStringLiteral("开机启动项"),
+                m_startupAction == QLatin1String("disable")
+                    ? QStringLiteral("禁用开机启动")
+                    : QStringLiteral("启用开机启动"),
+                display, true, true, QStringLiteral("startup"), undoArgs);
+        }
+
+        // 等本次任务状态复位后再重新读列表，避免再次触发并发提示
+        QTimer::singleShot(0, this, &MainWindow::runStartupList);
         return;
     }
+
+    const bool undoMode = !m_undoId.isEmpty();
+    m_undoId.clear();
+    m_undoKind.clear();
 
     const QString message = object.value(QStringLiteral("message")).toString();
     QString reason;
@@ -1980,7 +2321,7 @@ void MainWindow::handleStartupToggle()
     ui->startupSummary->setText(QStringLiteral("修改失败"));
     appendLog("-------------------");
     appendLog(QStringLiteral("修改启动项失败：%1").arg(message));
-    showMessage("修改启动项失败", reason, QMessageBox::Warning);
+    showMessage(undoMode ? "撤销失败" : "修改启动项失败", reason, QMessageBox::Warning);
 }
 
 void MainWindow::addStartupRow(const QString &source, const QString &name,
@@ -2654,6 +2995,13 @@ void MainWindow::handleDuplicateDelete()
     if (failed > 0)
         message += QStringLiteral("\n\n有 %1 个文件无法删除（可能被占用或没有权限）。")
                        .arg(failed);
+
+    if (deleted > 0) {
+        recordOperation(
+            QStringLiteral("重复文件"),
+            QStringLiteral("删除 %1 个重复副本").arg(deleted),
+            QDir::toNativeSeparators(m_dupRoot), true);
+    }
 
     appendLog("-------------------");
     appendLog(message);
@@ -4031,6 +4379,8 @@ void MainWindow::handleUninstallAction()
 
     if (code == QLatin1String("removed")) {
         appendLog(QStringLiteral("「%1」的卸载程序已结束，程序项已从清单移除。").arg(name));
+        recordOperation(QStringLiteral("软件卸载"),
+                        QStringLiteral("卸载程序"), name, true);
         showMessage("卸载完成", QStringLiteral("「%1」已卸载，正在刷新程序清单。").arg(name));
         runUninstallList();
         return;
@@ -4038,6 +4388,8 @@ void MainWindow::handleUninstallAction()
 
     if (code == QLatin1String("still-present")) {
         appendLog(QStringLiteral("「%1」的卸载程序已结束，但程序项仍然存在。").arg(name));
+        recordOperation(QStringLiteral("软件卸载"),
+                        QStringLiteral("运行卸载程序（未彻底移除）"), name, true);
         showMessage("卸载未完成",
                     QStringLiteral("卸载程序已结束，但「%1」仍在程序清单中，"
                                    "可能已取消或未彻底卸载。\n\n正在刷新清单。")
@@ -4374,6 +4726,18 @@ void MainWindow::restoreHosts()
         != QMessageBox::Yes)
         return;
 
+    // 记录恢复前的内容，万一要撤销这次恢复，可以再写回去
+    const QString tempPath = QDir(QDir::tempPath())
+                                 .filePath(QStringLiteral("wt-hosts-pre-undo.txt"));
+    QFile file(tempPath);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        file.write(ui->hostsEditor->toPlainText().toUtf8());
+        file.close();
+        m_hostsUndoSource = tempPath;
+    } else {
+        m_hostsUndoSource.clear();
+    }
+
     runHostsWrite(QStringLiteral("restore"), QString());
 }
 
@@ -4411,6 +4775,10 @@ void MainWindow::runHostsWrite(const QString &action, const QString &source)
     if (!source.isEmpty()) {
         args << QStringLiteral("-Source") << source;
     }
+    if (!m_hostsBackup.isEmpty()) {
+        args << QStringLiteral("-Backup") << m_hostsBackup;
+        m_hostsBackup.clear();
+    }
 
     m_task = Task::HostsWrite;
     m_runner->run(QStringLiteral("powershell.exe"), args);
@@ -4437,6 +4805,9 @@ void MainWindow::handleHostsWrite()
 
     if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
         || !document.isObject()) {
+        m_undoId.clear();
+        m_undoKind.clear();
+        m_hostsUndoSource.clear();
         appendLog("-------------------");
         appendLog("写入 Hosts 失败：未能解析脚本输出。");
         const QString raw = output.trimmed();
@@ -4480,11 +4851,44 @@ void MainWindow::handleHostsWrite()
     appendLog(message);
 
     if (ok) {
+        if (!m_undoId.isEmpty()) {
+            const QString undoId = m_undoId;
+            m_undoId.clear();
+            m_undoKind.clear();
+            markOperationUndone(undoId);
+            refreshOperationPage();
+            showMessage("已撤销",
+                        QStringLiteral("Hosts 已恢复到操作前的状态，正在重新读取。"));
+        } else if (restore) {
+            const bool canUndo = !m_hostsUndoSource.isEmpty()
+                                 && QFileInfo(m_hostsUndoSource).exists();
+            QJsonObject undoArgs;
+            undoArgs.insert(QStringLiteral("source"), m_hostsUndoSource);
+            recordOperation(QStringLiteral("Hosts"),
+                            QStringLiteral("恢复 Hosts 备份"),
+                            backup, true, canUndo,
+                            canUndo ? QStringLiteral("hosts-restore") : QString(),
+                            undoArgs);
+        } else {
+            QJsonObject undoArgs;
+            undoArgs.insert(QStringLiteral("backup"), backup);
+            recordOperation(QStringLiteral("Hosts"),
+                            QStringLiteral("保存 Hosts"),
+                            backup.isEmpty() ? QStringLiteral("Hosts 文件") : backup,
+                            true, !backup.isEmpty(),
+                            backup.isEmpty() ? QString()
+                                             : QStringLiteral("hosts-save"),
+                            undoArgs);
+        }
+        m_hostsUndoSource.clear();
         showMessage(restore ? QStringLiteral("已恢复备份")
                             : QStringLiteral("Hosts 已保存"),
                     message);
         runHostsRead();
     } else {
+        m_undoId.clear();
+        m_undoKind.clear();
+        m_hostsUndoSource.clear();
         showMessage(restore ? QStringLiteral("恢复 Hosts 失败")
                             : QStringLiteral("保存 Hosts 失败"),
                     message, QMessageBox::Warning);
@@ -4639,6 +5043,7 @@ void MainWindow::applyDns(const QString &servers, const QString &label)
         != QMessageBox::Yes)
         return;
 
+    m_dnsPendingLabel = label;
     runDnsWrite(servers);
 }
 
@@ -4707,6 +5112,13 @@ void MainWindow::handleDnsWrite()
     if (code == QLatin1String("applied")) {
         appendLog("-------------------");
         appendLog("DNS 已切换，正在刷新解析缓存。");
+        recordOperation(QStringLiteral("DNS"),
+                        QStringLiteral("切换 DNS"),
+                        m_dnsPendingLabel.isEmpty()
+                            ? QStringLiteral("当前默认网卡")
+                            : m_dnsPendingLabel,
+                        true);
+        m_dnsPendingLabel.clear();
         showMessage("DNS 已切换", QStringLiteral("新的 DNS 已生效，正在重新读取当前配置。"));
         runDnsRead();
         return;
@@ -4923,6 +5335,9 @@ void MainWindow::handleSfcRepair(int exitCode)
                            "若日志提示修复了损坏文件，建议重启计算机。").arg(command));
         appendLog("-------------------");
         appendLog(QStringLiteral("%1 执行完成，日志已输出到下方窗口。").arg(command));
+        recordOperation(QStringLiteral("系统文件"),
+                        QStringLiteral("%1 修复").arg(command),
+                        QStringLiteral("系统盘"), true);
     } else {
         state = QStringLiteral("risk");
         ui->sfcSummary->setText(
@@ -5031,6 +5446,9 @@ void MainWindow::handleWUpdateFix(int exitCode)
                            "再检查一次更新。"));
         appendLog("-------------------");
         appendLog("Windows 更新组件重置完成。");
+        recordOperation(QStringLiteral("Windows 更新"),
+                        QStringLiteral("重置更新组件"),
+                        QStringLiteral("更新缓存目录"), true);
     } else {
         state = QStringLiteral("risk");
         ui->wupdateSummary->setText(
@@ -5137,6 +5555,9 @@ void MainWindow::handleSxsCleanup(int exitCode)
                            "C 盘空间图」再核对一次。"));
         appendLog("-------------------");
         appendLog("Windows 更新组件清理完成。");
+        recordOperation(QStringLiteral("Windows 更新"),
+                        QStringLiteral("清理更新组件"),
+                        QStringLiteral("WinSxS 组件存储"), true);
     } else {
         state = QStringLiteral("risk");
         ui->wupdateSummary->setText(
@@ -5402,6 +5823,9 @@ void MainWindow::handleRestorePointCreate()
             QStringLiteral("还原点创建成功，正在刷新列表……"));
         appendLog("-------------------");
         appendLog("系统还原点创建成功。");
+        recordOperation(QStringLiteral("系统还原"),
+                        QStringLiteral("创建系统还原点"),
+                        QStringLiteral("系统盘"), true);
 
         // 等本次任务状态复位后再读取列表，避免覆盖当前结果
         QTimer::singleShot(0, this, &MainWindow::runRestorePointList);
@@ -5808,7 +6232,8 @@ void MainWindow::addContextMenuRow(const QString &badge, const QString &display,
     toggle->setObjectName(QStringLiteral("cmToggleBtn"));
     toggle->setFixedWidth(64);
     connect(toggle, &QPushButton::clicked, this,
-            [this, root, scope, entry, disabled] {
+            [this, root, scope, entry, display, disabled] {
+                m_cmDisplay = display.isEmpty() ? entry : display;
                 runContextMenuToggle(root, scope, entry, !disabled);
             });
 
@@ -5840,6 +6265,7 @@ void MainWindow::runContextMenuToggle(const QString &root, const QString &scope,
     m_cmRoot = root;
     m_cmScope = scope;
     m_cmEntry = entry;
+    m_cmDisable = disable;
 
     ++m_flow;
 
@@ -5881,6 +6307,8 @@ void MainWindow::handleContextMenuToggle()
     QJsonParseError parseError{};
     const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
     if (payload.isEmpty() || !document.isObject()) {
+        m_undoId.clear();
+        m_undoKind.clear();
         ui->contextMenuSummary->setText(QStringLiteral("操作失败"));
         showMessage("操作失败",
                     "未能从 PowerShell 获取操作结果，请稍后重试。",
@@ -5891,13 +6319,40 @@ void MainWindow::handleContextMenuToggle()
     const QJsonObject object = document.object();
     const bool ok = object.value(QStringLiteral("ok")).toBool();
     if (!ok) {
+        const bool undoMode = !m_undoId.isEmpty();
+        m_undoId.clear();
+        m_undoKind.clear();
         ui->contextMenuSummary->setText(QStringLiteral("操作失败"));
-        showMessage("修改右键菜单失败",
+        showMessage(undoMode ? "撤销失败" : "修改右键菜单失败",
                     "系统返回：" + object.value(QStringLiteral("message")).toString()
                         + "\n\n标记为「系统」的项目要管理员权限才能改，"
                           "请右键用「以管理员身份运行」重新打开本程序。",
                     QMessageBox::Warning);
         return;
+    }
+
+    if (!m_undoId.isEmpty()) {
+        const QString undoId = m_undoId;
+        m_undoId.clear();
+        m_undoKind.clear();
+        markOperationUndone(undoId);
+        refreshOperationPage();
+        showMessage("已撤销",
+                    QStringLiteral("右键菜单项已恢复到操作前的状态，正在刷新列表。"));
+    } else {
+        QJsonObject undoArgs;
+        undoArgs.insert(QStringLiteral("root"), m_cmRoot);
+        undoArgs.insert(QStringLiteral("scope"), m_cmScope);
+        undoArgs.insert(QStringLiteral("entry"), m_cmEntry);
+        undoArgs.insert(QStringLiteral("display"), m_cmDisplay);
+        undoArgs.insert(QStringLiteral("disable"), !m_cmDisable);
+
+        recordOperation(
+            QStringLiteral("右键菜单"),
+            m_cmDisable ? QStringLiteral("禁用右键菜单项")
+                        : QStringLiteral("启用右键菜单项"),
+            m_cmDisplay.isEmpty() ? m_cmEntry : m_cmDisplay,
+            true, true, QStringLiteral("contextmenu"), undoArgs);
     }
 
     // 重新读取一遍，让列表里的禁用状态与注册表保持一致。

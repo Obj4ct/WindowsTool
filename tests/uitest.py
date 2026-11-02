@@ -711,6 +711,45 @@ def test_background_result(exe, shot_dir):
                 proc.kill()
 
 
+def test_operation_page(exe, shot_dir):
+    """测试6：操作记录页面可打开，记录卡片与汇总行正常显示"""
+    print("\n[测试6] 操作记录页面")
+    proc = subprocess.Popen([exe], cwd=os.path.dirname(exe))
+    try:
+        hwnd = find_app_window(proc)
+        if not hwnd:
+            check("启动并显示主窗口", False, "未找到窗口")
+            return
+        time.sleep(2)
+
+        switched, detail = uia_click(proc.pid, "navOperationsBtn")
+        check("切换到操作记录页", switched, detail)
+        time.sleep(0.8)
+
+        check("页面标题存在",
+              uia_exists(proc.pid, "pageTitleOperations"))
+        check("记录卡片存在",
+              uia_exists(proc.pid, "cardOperations"))
+        check("记录滚动区存在",
+              uia_exists(proc.pid, "operationsScroll"))
+        check("汇总行显示记录条数",
+              uia_exists_name_contains(proc.pid, "条记录"),
+              "未找到「共 N 条记录」")
+
+        shot = os.path.join(shot_dir, "uitest_operations.png")
+        if capture(hwnd, shot):
+            check("保存操作记录页截图", True, shot)
+
+        check("进程未崩溃", proc.poll() is None, f"exit={proc.poll()}")
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+
+
 def main():
     if len(sys.argv) < 2:
         print("用法: python uitest.py <exe路径>")
@@ -730,6 +769,7 @@ def main():
     test_task_switch(exe)
     test_task_concurrency(exe, shot_dir)
     test_background_result(exe, shot_dir)
+    test_operation_page(exe, shot_dir)
 
     print(f"\n===== 结果: {passed} passed, {failed} failed =====")
     return 0 if failed == 0 else 1

@@ -1,6 +1,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QJsonObject>
 #include <QMainWindow>
 #include <QList>
 #include <QMessageBox>
@@ -246,6 +247,31 @@ private:
     void addFileLockRow(const QString &badge, const QString &name,
                         const QString &detail);
 
+    // 操作记录（本地追加留痕；可逆操作提供撤销）
+    struct OperationRecord {
+        QString id;
+        QString time;
+        QString feature;
+        QString action;
+        QString target;
+        bool ok = false;
+        bool undoable = false;
+        bool undone = false;
+        QString undoKind;
+        QString undoArgsJson;
+    };
+    QString operationsFilePath() const;
+    void recordOperation(const QString &feature, const QString &action,
+                         const QString &target, bool ok,
+                         bool undoable = false,
+                         const QString &undoKind = QString(),
+                         const QJsonObject &undoArgs = QJsonObject());
+    QList<OperationRecord> readOperationRecords() const;
+    void markOperationUndone(const QString &id);
+    void refreshOperationPage();
+    void addOperationRow(const OperationRecord &record);
+    void startUndo(const OperationRecord &record);
+
     // 系统文件修复（SFC / DISM）
     void toggleSfcCard();
     void runSfcRepair(const QString &mode);
@@ -266,6 +292,9 @@ private:
 
     /** 当前默认路由网卡的显示名，DNS 切换时用于提示 */
     QString m_dnsAlias;
+
+    /** 本次要切换到的 DNS 名称，用于操作记录 */
+    QString m_dnsPendingLabel;
 
     /** 重复文件扫描：扫描目录与已展示的分组数，删除时按同样的分组顺序处理 */
     QString m_dupRoot;
@@ -314,6 +343,26 @@ private:
 
     /** 系统还原点：创建过程中禁用按钮，避免重复触发 */
     bool m_restoreBusy = false;
+
+    /** 撤销流程上下文：非空表示当前任务在撤销某条操作记录 */
+    QString m_undoId;
+    QString m_undoKind;
+
+    /** 待记录的启动项操作参数（处理脚本回包时补写记录） */
+    QString m_startupAction;
+    QString m_startupSource;
+    QString m_startupName;
+    QString m_startupCommand;
+
+    /** 待记录的右键菜单操作参数 */
+    QString m_cmDisplay;
+    bool m_cmDisable = false;
+
+    /** Hosts 恢复前内容临时文件，用于撤销「恢复备份」 */
+    QString m_hostsUndoSource;
+
+    /** 撤销「保存 Hosts」时要精确恢复的备份文件名 */
+    QString m_hostsBackup;
 
     /** 转到后台继续运行的任务（前台一次只跑一个，后台可同时跑多个） */
     struct BackgroundTask {

@@ -62,7 +62,7 @@
 }
 
 #navOverviewBtn, #navNetworkBtn, #navSystemBtn,
-#navHardwareBtn, #navManageBtn, #navToolsBtn {
+#navHardwareBtn, #navManageBtn, #navToolsBtn, #navOperationsBtn {
     background: transparent;
     border: none;
     border-radius: 10px;
@@ -72,31 +72,36 @@
     text-align: left;
 }
 #navOverviewBtn:hover, #navNetworkBtn:hover, #navSystemBtn:hover,
-#navHardwareBtn:hover, #navManageBtn:hover, #navToolsBtn:hover {
+#navHardwareBtn:hover, #navManageBtn:hover, #navToolsBtn:hover,
+#navOperationsBtn:hover {
     background: #182740;
     color: #E6EEFB;
 }
 #navOverviewBtn:checked, #navNetworkBtn:checked, #navSystemBtn:checked,
-#navHardwareBtn:checked, #navManageBtn:checked, #navToolsBtn:checked {
+#navHardwareBtn:checked, #navManageBtn:checked, #navToolsBtn:checked,
+#navOperationsBtn:checked {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                                 stop:0 #2E68D6, stop:1 #2A5FC7);
     color: #FFFFFF;
 }
 #navOverviewBtn:checked:hover, #navNetworkBtn:checked:hover, #navSystemBtn:checked:hover,
-#navHardwareBtn:checked:hover, #navManageBtn:checked:hover, #navToolsBtn:checked:hover {
+#navHardwareBtn:checked:hover, #navManageBtn:checked:hover, #navToolsBtn:checked:hover,
+#navOperationsBtn:checked:hover {
     background: #3A76E4;
 }
 
 /* ---------------- 页面标题 ---------------- */
 #pageTitleOverview, #pageTitleNetwork, #pageTitleSystem,
-#pageTitleHardware, #pageTitleManage, #pageTitleTools {
+#pageTitleHardware, #pageTitleManage, #pageTitleTools,
+#pageTitleOperations {
     color: #16202E;
     font-size: 21px;
     font-weight: 600;
 }
 
 #pageDescOverview, #pageDescNetwork, #pageDescSystem,
-#pageDescHardware, #pageDescManage, #pageDescTools {
+#pageDescHardware, #pageDescManage, #pageDescTools,
+#pageDescOperations {
     color: #8795AB;
     font-size: 12px;
 }
@@ -104,7 +109,8 @@
 /* ---------------- 内容页 ---------------- */
 #pageOverview, #pageOverviewInner, #pageNetwork, #pageNetworkInner,
 #pageSystem, #pageSystemInner, #pageHardware, #pageHardwareInner,
-#pageManage, #pageManageInner, #pageTools, #pageToolsInner {
+#pageManage, #pageManageInner, #pageTools, #pageToolsInner,
+#pageOperations, #pageOperationsInner {
     background: transparent;
     border: none;
 }
@@ -115,7 +121,7 @@
 #cardMonitor, #cardBattery, #cardManage, #cardStartup, #cardProcesses,
 #cardUninstall, #cardDrivers, #cardTools, #cardLargeFiles,
 #cardDiskUsage, #cardTreemap, #cardDup, #cardContextMenu, #cardBootTime,
-#cardFileLock, #cardRestore {
+#cardFileLock, #cardRestore, #cardOperations {
     background: #FFFFFF;
     border: 1px solid #E7ECF4;
     border-radius: 14px;
@@ -134,7 +140,8 @@
 #hwinfoTitle, #diskHealthTitle, #monitorTitle, #batteryTitle,
 #startupTitle, #processesTitle, #uninstallTitle, #driversTitle,
 #largeFilesTitle, #diskUsageTitle, #treemapTitle, #dupTitle,
-#contextMenuTitle, #bootTimeTitle, #fileLockTitle, #restoreTitle {
+#contextMenuTitle, #bootTimeTitle, #fileLockTitle, #restoreTitle,
+#operationsTitle {
     color: #1A2433;
     font-size: 15px;
     font-weight: 600;
@@ -314,7 +321,8 @@
 #contextMenuScroll, #contextMenuRows,
 #bootTimeScroll, #bootTimeRows,
 #fileLockScroll, #fileLockRows,
-#restoreScroll, #restoreRows {
+#restoreScroll, #restoreRows,
+#operationsScroll, #operationsRows {
     background: transparent;
     border: none;
 }
@@ -324,7 +332,7 @@
 #driversSummary, #hostsSummary, #dnsSummary, #monitorSummary,
 #batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
 #fileLockSummary, #sfcSummary, #wupdateSummary,
-#treemapSummary, #restoreSummary {
+#treemapSummary, #restoreSummary, #operationsSummary {
     color: #4A576F;
     font-size: 13px;
 }
@@ -404,6 +412,61 @@
     background: #EAF1FC;
     border-color: #C9D9F5;
     color: #2B6CD4;
+}
+
+/* ---------------- 操作记录 ---------------- */
+#operationRow {
+    background: #FBFCFE;
+    border: 1px solid #EDF1F7;
+    border-radius: 10px;
+}
+#operationsEmpty {
+    color: #93A0B4;
+    font-size: 12px;
+    padding: 18px 4px;
+}
+#operationsTime {
+    color: #7A879B;
+    font-size: 12px;
+}
+#operationsBadge {
+    background: #EEF3FB;
+    border-radius: 8px;
+    color: #3A66B0;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 7px;
+}
+#operationsAction {
+    color: #1E2A3B;
+    font-size: 13px;
+    font-weight: 600;
+}
+#operationsTarget {
+    color: #7A879B;
+    font-size: 12px;
+}
+#operationsStatus {
+    color: #7A879B;
+    font-size: 12px;
+}
+#operationsStatus[state="undone"] {
+    color: #2B6CD4;
+}
+#operationsStatus[state="irreversible"] {
+    color: #B7791F;
+}
+#operationsUndoBtn {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 8px;
+    color: #2B6CD4;
+    font-size: 12px;
+    padding: 0 12px;
+}
+#operationsUndoBtn:hover {
+    background: #F5F8FE;
+    border-color: #B9CDF0;
 }
 
 /* 行内主标题 / 副标题 */

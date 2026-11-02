@@ -1,6 +1,7 @@
 param(
     [ValidateSet('read', 'save', 'restore')][string]$Action = 'read',
     [string]$Source = '',
+    [string]$Backup = '',
     [string]$Result = ''
 )
 
@@ -84,6 +85,7 @@ if (-not $isAdmin) {
     $tempResult = Join-Path $env:TEMP ('wt-hosts-' + [guid]::NewGuid().ToString('N') + '.json')
     $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Action $Action -Result `"$tempResult`""
     if ($Source) { $argList += " -Source `"$Source`"" }
+    if ($Backup) { $argList += " -Backup `"$Backup`"" }
 
     $started = $true
     try {
@@ -140,7 +142,11 @@ try {
         Write-Result $true 'saved' $backupName ''
     } elseif ($Action -eq 'restore') {
         $latest = Get-LatestBackup
-        if (-not $latest) {
+        if ($Backup) {
+            # Restore a specific backup (used by "undo" of a save operation)
+            $latest = Join-Path $backupDir (Split-Path -Leaf $Backup)
+        }
+        if ((-not $latest) -or (-not (Test-Path -LiteralPath $latest -PathType Leaf))) {
             Write-Result $false 'no-backup' '' ''
             exit 0
         }
