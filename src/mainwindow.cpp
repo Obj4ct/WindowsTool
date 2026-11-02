@@ -31,6 +31,7 @@
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QStyle>
+#include <QTextCodec>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QScrollArea>
@@ -213,6 +214,50 @@ QString batteryStatusLabel(int status)
     }
 }
 
+/**
+ * 解码外部工具写出的日志文件。
+ *
+ * SFC 输出按系统代码页（中文 Windows 为 GBK），DISM 重定向的日志是
+ * UTF-16LE；个别环境也可能给出 UTF-8。这里按 BOM / 字节分布判断：
+ *  - 有 UTF-16LE BOM（FF FE）或大量 0x00 落在奇数位 → UTF-16LE；
+ *  - 否则先按 UTF-8 解码，出现非法字节再退回本地代码页（GBK）。
+ */
+QString decodeLogFile(const QByteArray &raw)
+{
+    if (raw.isEmpty())
+        return QString();
+
+    if (raw.size() >= 2 && raw.at(0) == '\xFF' && raw.at(1) == '\xFE') {
+        QTextCodec *codec = QTextCodec::codecForName("UTF-16LE");
+        return codec ? codec->toUnicode(raw.mid(2)) : QString();
+    }
+
+    // 无 BOM 的 UTF-16LE：ASCII 字符的高字节都是 0x00，落在奇数位
+    bool looksUtf16 = raw.size() >= 8;
+    if (looksUtf16) {
+        const int limit = qMin(raw.size() / 2, 256);
+        int zeros = 0;
+        for (int i = 0; i < limit; ++i) {
+            if (raw.at(2 * i + 1) == '\0')
+                ++zeros;
+        }
+        looksUtf16 = zeros * 2 > limit;
+    }
+    if (looksUtf16) {
+        QTextCodec *codec = QTextCodec::codecForName("UTF-16LE");
+        return codec ? codec->toUnicode(raw) : QString();
+    }
+
+    QTextCodec *utf8 = QTextCodec::codecForName("UTF-8");
+    QTextCodec::ConverterState state;
+    QString text = utf8->toUnicode(raw.constData(), raw.size(), &state);
+    if (state.invalidChars == 0)
+        return text;
+
+    QTextCodec *gbk = QTextCodec::codecForName("GBK");
+    return gbk ? gbk->toUnicode(raw) : text;
+}
+
 /** 把样式表文件读入并应用到整个应用 */
 bool applyStyleSheet(QApplication &app)
 {
@@ -260,7 +305,8 @@ MainWindow::MainWindow(QWidget *parent)
                     || m_task == Task::DnsRead || m_task == Task::DnsWrite
                     || m_task == Task::FileLock || m_task == Task::BootTime
                     || m_task == Task::ContextMenuList
-                    || m_task == Task::ContextMenuToggle)
+                    || m_task == Task::ContextMenuToggle
+                    || m_task == Task::SfcRepair)
                     return;
                 appendLog(text);
             });
@@ -352,7 +398,7 @@ void MainWindow::setupTheme()
     ui->btn_cleaner->setIcon(tileIcon(UiIcons::Icon::Clean));
     ui->btn_fixWhite->setIcon(tileIcon(UiIcons::Icon::Picture));
     ui->btn_healthCheck->setIcon(tileIcon(UiIcons::Icon::Health));
-    ui->btn_sfc->setIcon(grayIcon(UiIcons::Icon::ShieldCheck));
+    ui->btn_sfc->setIcon(tileIcon(UiIcons::Icon::ShieldCheck));
     ui->btn_wupdate->setIcon(grayIcon(UiIcons::Icon::Refresh));
     ui->btn_bsod->setIcon(grayIcon(UiIcons::Icon::Info));
 
@@ -583,10 +629,6 @@ void MainWindow::wirePlaceholderTile(QToolButton *tile, const QString &title,
 
 void MainWindow::setupPlaceholders()
 {
-    wirePlaceholderTile(ui->btn_sfc,
-                        "系统文件修复（SFC / DISM）",
-                        "将调用系统自带的 SFC 与 DISM 修复受损的系统组件，"
-                        "用于解决系统文件缺失、开始菜单异常等问题。");
     wirePlaceholderTile(ui->btn_wupdate,
                         "Windows 更新修复",
                         "将重置更新组件与缓存，用于解决更新失败、"
@@ -808,6 +850,9 @@ void MainWindow::onTaskFinished(int exitCode)
     case Task::ContextMenuToggle:
         handleContextMenuToggle();
         break;
+    case Task::SfcRepair:
+        handleSfcRepair(exitCode);
+        break;
     case Task::NetInfo:
         handleNetworkInfo();
         break;
@@ -820,6 +865,18 @@ void MainWindow::onTaskFinished(int exitCode)
 
 void MainWindow::onTaskFailed(const QString &reason)
 {
+    if (m_task == Task::SfcRepair) {
+        if (m_sfcTimer)
+            m_sfcTimer->stop();
+        pollSfcLog();
+        setSfcRunning(false);
+        ui->sfcSummary->setText(
+            QStringLiteral("修复未能启动或异常中断：%1").arg(reason));
+        ui->sfcSummary->setProperty("state", QStringLiteral("risk"));
+        ui->sfcSummary->style()->unpolish(ui->sfcSummary);
+        ui->sfcSummary->style()->polish(ui->sfcSummary);
+    }
+
     appendLog("-------------------");
     appendLog(QStringLiteral("执行失败：%1").arg(reason));
     showMessage("操作执行失败", reason, QMessageBox::Critical);
@@ -1090,6 +1147,16 @@ void MainWindow::setupSystem()
     // 电脑体检
     connect(ui->btn_healthCheck, &QAbstractButton::clicked,
             this, &MainWindow::runHealthCheck);
+
+    // 系统文件修复（SFC / DISM）：点磁贴展开卡片，卡片内两个按钮启动修复
+    connect(ui->btn_sfc, &QAbstractButton::clicked,
+            this, &MainWindow::toggleSfcCard);
+    connect(ui->btnSfcScan, &QPushButton::clicked, this, [this]() {
+        runSfcRepair(QStringLiteral("sfc"));
+    });
+    connect(ui->btnDismRepair, &QPushButton::clicked, this, [this]() {
+        runSfcRepair(QStringLiteral("dism"));
+    });
 
     // 开机启动项（只读）
     connect(ui->btn_startup, &QAbstractButton::clicked,
@@ -1759,6 +1826,7 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardDrivers->setVisible(card == ui->cardDrivers);
     ui->cardBattery->setVisible(card == ui->cardBattery);
     ui->cardDup->setVisible(card == ui->cardDup);
+    ui->cardSfc->setVisible(card == ui->cardSfc);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
@@ -4114,6 +4182,180 @@ void MainWindow::stopMonitor()
     ui->monitorSummary->setText(
         QStringLiteral("已暂停（再次点击「实时监控」磁贴可继续）"));
     appendLog("实时监控已暂停。");
+}
+
+// ---------------------------------------------------------------- 系统文件修复
+
+void MainWindow::toggleSfcCard()
+{
+    // 修复运行中不允许收起卡片，避免用户误以为任务已结束
+    if (m_task == Task::SfcRepair)
+        return;
+
+    ui->cardSfc->setVisible(!ui->cardSfc->isVisible());
+    if (ui->cardSfc->isVisible())
+        showSystemResultCard(ui->cardSfc);
+}
+
+void MainWindow::runSfcRepair(const QString &mode)
+{
+    if (m_task == Task::SfcRepair)
+        return;
+
+    if (!batExists("sfcRepair.bat")) {
+        showMessage("缺少脚本文件",
+                    "未找到所需的脚本文件 sfcRepair.bat。\n\n"
+                    "请确认程序目录下的 bat 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    const bool dism = (mode == QLatin1String("dism"));
+
+    QString text = dism
+        ? QStringLiteral("将调用 DISM 修复系统映像（组件存储），"
+                         "用于解决系统组件损坏导致的功能异常。")
+        : QStringLiteral("将调用 SFC 扫描全部受保护的系统文件，"
+                         "并用系统缓存中的正确版本替换损坏的文件。");
+    text += QStringLiteral("\n\n整个过程可能需要 10-30 分钟，期间电脑会明显变慢，"
+                           "请不要关闭本程序。\n\n"
+                           "开始时会弹出管理员权限请求，请选择「是」。\n\n"
+                           "是否继续？");
+
+    if (!confirmAction(dism ? "修复系统映像" : "扫描并修复系统文件", text))
+        return;
+
+    ++m_flow;
+
+    const QString logPath = QDir(QDir::tempPath())
+                                .filePath(QStringLiteral("wt_sfc_%1.log").arg(mode));
+    // 先删旧日志，避免把上一次的结果当成本次输出
+    QFile::remove(logPath);
+
+    m_sfcMode = mode;
+    m_sfcLogPath = logPath;
+    m_sfcLogBytes = 0;
+    m_sfcLogChars = 0;
+    ui->sfcLog->clear();
+
+    ui->sfcSummary->setText(
+        QStringLiteral("正在执行 %1，日志每秒刷新。请耐心等待，不要关闭本程序。")
+            .arg(dism ? QStringLiteral("DISM 系统映像修复")
+                      : QStringLiteral("SFC 系统文件扫描")));
+    ui->sfcSummary->setProperty("state", QString());
+    ui->sfcSummary->style()->unpolish(ui->sfcSummary);
+    ui->sfcSummary->style()->polish(ui->sfcSummary);
+    showSystemResultCard(ui->cardSfc);
+
+    setSfcRunning(true);
+
+    if (!m_sfcTimer) {
+        m_sfcTimer = new QTimer(this);
+        m_sfcTimer->setInterval(1000);
+        connect(m_sfcTimer, &QTimer::timeout, this, &MainWindow::pollSfcLog);
+    }
+    m_sfcTimer->start();
+
+    appendLog("-------------------");
+    appendLog(dism ? "正在修复系统映像（DISM），请稍候……"
+                   : "正在扫描并修复系统文件（SFC），请稍候……");
+
+    m_task = Task::SfcRepair;
+    m_runner->runBat("sfcRepair.bat",
+                     {mode, QDir::toNativeSeparators(logPath)});
+}
+
+void MainWindow::pollSfcLog()
+{
+    // 任务已被其它功能取代（或已结束）时停止轮询
+    if (m_task != Task::SfcRepair) {
+        if (m_sfcTimer && m_sfcTimer->isActive())
+            m_sfcTimer->stop();
+        return;
+    }
+
+    if (m_sfcLogPath.isEmpty())
+        return;
+
+    QFile file(m_sfcLogPath);
+    if (!file.open(QIODevice::ReadOnly))
+        return;
+
+    const qint64 size = file.size();
+    if (size <= m_sfcLogBytes) {
+        file.close();
+        return;
+    }
+
+    // 整份解码再取增量：日志可能被拆成多次写入，
+    // 逐块解码会在多字节字符中间断开，产生乱码。
+    const QString full = decodeLogFile(file.readAll());
+    file.close();
+    m_sfcLogBytes = size;
+
+    if (full.size() <= m_sfcLogChars)
+        return;
+    appendSfcLog(full.mid(m_sfcLogChars));
+    m_sfcLogChars = full.size();
+}
+
+void MainWindow::appendSfcLog(const QString &text)
+{
+    if (text.isEmpty())
+        return;
+
+    // 与主日志一样走 QTextCursor::insertText，避免把 <、& 当成标记解析
+    QTextCursor cursor(ui->sfcLog->document());
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(text);
+    ui->sfcLog->setTextCursor(cursor);
+    ui->sfcLog->ensureCursorVisible();
+}
+
+void MainWindow::handleSfcRepair(int exitCode)
+{
+    if (m_sfcTimer)
+        m_sfcTimer->stop();
+    pollSfcLog();   // 进程结束前可能还有最后一段输出
+
+    setSfcRunning(false);
+
+    const bool dism = (m_sfcMode == QLatin1String("dism"));
+    const QString command = dism ? QStringLiteral("DISM") : QStringLiteral("SFC");
+
+    QString state;
+    if (exitCode == 0) {
+        state = QStringLiteral("ok");
+        ui->sfcSummary->setText(
+            QStringLiteral("%1 执行完成（退出码 0）。请对照下方日志确认结果；"
+                           "若日志提示修复了损坏文件，建议重启计算机。").arg(command));
+        appendLog("-------------------");
+        appendLog(QStringLiteral("%1 执行完成，日志已输出到下方窗口。").arg(command));
+    } else {
+        state = QStringLiteral("risk");
+        ui->sfcSummary->setText(
+            QStringLiteral("%1 未成功完成（退出码 %2）。若日志中没有有效内容，"
+                           "通常是取消了管理员权限请求；可重新运行并选择「是」。")
+                .arg(command).arg(exitCode));
+        appendLog("-------------------");
+        appendLog(QStringLiteral("%1 未成功完成，退出码：%2").arg(command).arg(exitCode));
+        showMessage(dism ? "系统映像修复未完成" : "系统文件修复未完成",
+                    QStringLiteral("%1 的退出码为 %2。\n\n"
+                                   "若刚刚取消了管理员权限请求，重新点击按钮并在弹窗中选择"
+                                   "「是」即可。").arg(command).arg(exitCode),
+                    QMessageBox::Warning);
+    }
+
+    ui->sfcSummary->setProperty("state", state);
+    ui->sfcSummary->style()->unpolish(ui->sfcSummary);
+    ui->sfcSummary->style()->polish(ui->sfcSummary);
+    m_sfcLogPath.clear();
+}
+
+void MainWindow::setSfcRunning(bool running)
+{
+    ui->btnSfcScan->setEnabled(!running);
+    ui->btnDismRepair->setEnabled(!running);
 }
 
 // ---------------------------------------------------------------- 通用工具

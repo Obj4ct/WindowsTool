@@ -11,6 +11,7 @@ QT_END_NAMESPACE
 
 class ProcessRunner;
 class QToolButton;
+class QTimer;
 class SysMonitor;
 
 /**
@@ -64,7 +65,8 @@ private:
         FileLock,        ///< 查询文件被哪个进程占用（filelock.ps1）
         BootTime,        ///< 开机耗时分析（boottime.ps1）
         ContextMenuList, ///< 右键菜单项枚举（contextmenu.ps1 list）
-        ContextMenuToggle ///< 禁用/启用右键菜单项（contextmenu.ps1 disable/enable）
+        ContextMenuToggle, ///< 禁用/启用右键菜单项（contextmenu.ps1 disable/enable）
+        SfcRepair        ///< 系统文件修复（sfcRepair.bat sfc/dism）
     };
 
     void setupTheme();
@@ -217,6 +219,14 @@ private:
     void addFileLockRow(const QString &badge, const QString &name,
                         const QString &detail);
 
+    // 系统文件修复（SFC / DISM）
+    void toggleSfcCard();
+    void runSfcRepair(const QString &mode);
+    void handleSfcRepair(int exitCode);
+    void pollSfcLog();
+    void appendSfcLog(const QString &text);
+    void setSfcRunning(bool running);
+
     /** 系统页同时只显示一个结果卡片，并把该卡片滚入视野 */
     void showSystemResultCard(QWidget *card);
 
@@ -236,6 +246,16 @@ private:
     QString m_cmRoot;
     QString m_cmScope;
     QString m_cmEntry;
+
+    /**
+     * 系统文件修复：当前模式（sfc / dism）、日志文件路径，
+     * m_sfcLogBytes 为上次读取到的文件大小，m_sfcLogChars 为已显示的字符数。
+     */
+    QString m_sfcMode;
+    QString m_sfcLogPath;
+    qint64 m_sfcLogBytes = 0;
+    int m_sfcLogChars = 0;
+    QTimer *m_sfcTimer = nullptr;
 
     /** CPU/内存/磁盘/网络实时采样器 */
     SysMonitor *m_monitor = nullptr;

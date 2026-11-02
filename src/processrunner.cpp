@@ -93,6 +93,11 @@ QStringList ProcessRunner::cmdArguments(const QString &commandLine)
 
 void ProcessRunner::runBat(const QString &fileName)
 {
+    runBat(fileName, {});
+}
+
+void ProcessRunner::runBat(const QString &fileName, const QStringList &arguments)
+{
     const QString script = QDir(QCoreApplication::applicationDirPath())
                                .filePath(QStringLiteral("bat/") + fileName);
 
@@ -102,7 +107,12 @@ void ProcessRunner::runBat(const QString &fileName)
     }
 
     m_output.clear();
-    run(cmdExecutable(), { QStringLiteral("/c"), QDir::toNativeSeparators(script) });
+
+    // /c 之后脚本与参数保持独立参数，由 QProcess 负责逐个加引号，
+    // 脚本内用 %1、%2 直接拿到不带引号的值。
+    QStringList cmdArgs = { QStringLiteral("/c"), QDir::toNativeSeparators(script) };
+    cmdArgs.append(arguments);
+    run(cmdExecutable(), cmdArgs);
 }
 
 void ProcessRunner::runCommand(const QString &commandLine)

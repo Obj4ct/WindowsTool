@@ -44,6 +44,14 @@ public:
     void runBat(const QString &fileName);
 
     /**
+     * 执行 bat/ 目录下的脚本并传入参数。
+     *
+     * 参数按 QProcess 的规则逐个转义，脚本里用 %1、%2 接收；
+     * 不需要调用方自行拼加引号。
+     */
+    void runBat(const QString &fileName, const QStringList &arguments);
+
+    /**
      * 通过 cmd.exe 执行一条命令行，例如 "ping www.baidu.com"。
      *
      * 内部自动补上 /c 参数。**不要直接用 run(cmd(), {...}) 去跑命令行**：

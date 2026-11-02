@@ -1573,6 +1573,115 @@
                </widget>
               </item>
               <item>
+               <widget class="QFrame" name="cardSfc">
+                <property name="visible">
+                 <bool>false</bool>
+                </property>
+                <property name="frameShape">
+                 <enum>QFrame::NoFrame</enum>
+                </property>
+                <layout class="QVBoxLayout" name="sfcLayout">
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>14</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>14</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="sfcTitle">
+                   <property name="text">
+                    <string>系统文件修复（SFC / DISM）</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="sfcSummary">
+                   <property name="text">
+                    <string>尚未运行修复。SFC 扫描并替换损坏的系统文件；DISM 修复用于恢复系统映像的组件存储。两者都需要管理员权限，且可能需要较长时间，建议在空闲时执行。</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="sfcButtonRow">
+                   <property name="spacing">
+                    <number>10</number>
+                   </property>
+                   <item>
+                    <widget class="QPushButton" name="btnSfcScan">
+                     <property name="minimumSize">
+                      <size>
+                       <width>0</width>
+                       <height>32</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>扫描并修复（SFC）</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="btnDismRepair">
+                     <property name="minimumSize">
+                      <size>
+                       <width>0</width>
+                       <height>32</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>修复系统映像（DISM）</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <spacer name="sfcButtonSpacer">
+                     <property name="orientation">
+                      <enum>Qt::Horizontal</enum>
+                     </property>
+                     <property name="sizeHint" stdset="0">
+                      <size>
+                       <width>40</width>
+                       <height>20</height>
+                      </size>
+                     </property>
+                    </spacer>
+                   </item>
+                  </layout>
+                 </item>
+                 <item>
+                  <widget class="QPlainTextEdit" name="sfcLog">
+                   <property name="minimumSize">
+                    <size>
+                     <width>0</width>
+                     <height>220</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16777215</width>
+                     <height>260</height>
+                    </size>
+                   </property>
+                   <property name="readOnly">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
                <spacer name="sysPageSpacer">
                 <property name="orientation">
                  <enum>Qt::Vertical</enum>
