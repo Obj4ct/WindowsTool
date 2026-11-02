@@ -73,6 +73,8 @@ public:
     void stop();
 
 signals:
+    /** 命令已经开始执行（用于展示"正在处理"提示） */
+    void started();
     /** 收到一段新输出 */
     void outputReceived(const QString &text);
     /** 进程正常结束，exitCode 为退出码 */

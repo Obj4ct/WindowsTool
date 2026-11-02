@@ -261,9 +261,22 @@ private:
     /** CPU/内存/磁盘/网络实时采样器 */
     SysMonitor *m_monitor = nullptr;
 
+    /**
+     * 耗时任务的"正在处理"提示。
+     *
+     * 命令启动后先等 m_busyDelay 再弹出底部处理过程面板，避免一闪而过的
+     * 命令造成面板闪烁；命令结束（含自动检测的串联步骤之间）m_busyIdle
+     * 内没有新命令则自动收起。
+     */
+    QTimer *m_busyDelay = nullptr;
+    QTimer *m_busyIdle = nullptr;
+    bool m_busyShown = false;
+
     // 工具方法
     void appendLog(const QString &text);
     void clearLog();
+    void showBusyHint();
+    void hideBusyHint();
     void showNetworkInfo();
     void showMessage(const QString &title, const QString &text,
                      QMessageBox::Icon icon = QMessageBox::Information);

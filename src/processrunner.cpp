@@ -134,6 +134,7 @@ void ProcessRunner::run(const QString &program, const QStringList &arguments)
     m_decoder.reset();   // 每次运行重置解码状态，避免上一次残留影响本次
     m_aborted = false;   // 新任务开始，上一次的"主动中止"标记失效
     m_process->start(program, arguments);
+    emit started();
 
     // 不阻塞等待：waitForStarted 会卡住主线程。
     // 启动失败由 errorOccurred(FailedToStart) → onError 统一上报。

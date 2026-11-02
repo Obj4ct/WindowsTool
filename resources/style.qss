@@ -668,9 +668,18 @@
 }
 #logHeader {
     background: #18202F;
+    border-bottom: 1px solid #222C3D;
+}
+/* 「处理过程」面板顶部的忙碌进度条：有任务在跑时来回滑动 */
+#logProgress {
+    background: #101725;
+    border: none;
     border-top-left-radius: 11px;
     border-top-right-radius: 11px;
-    border-bottom: 1px solid #222C3D;
+}
+#logProgress::chunk {
+    background: #2F6FDE;
+    border-radius: 2px;
 }
 #logTitle {
     color: #8FA0B8;

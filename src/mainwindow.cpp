@@ -456,6 +456,37 @@ void MainWindow::setupTheme()
     // 清空日志
     connect(ui->clearLogButton, &QPushButton::clicked,
             this, &MainWindow::clearLog);
+
+    // ------------------------------------------------- 耗时任务的提示
+    // 命令开始后先等 350ms 再弹出底部「处理过程」面板：太快结束的命令
+    // （如读取 DNS）不会闪一下；仍然在跑的命令则给出明确的等待提示。
+    // 命令结束后 1.6 秒内没有后续命令才收起，这样自动检测的
+    // ping → DNS → 修复 串联步骤之间不会反复开关。
+    m_busyDelay = new QTimer(this);
+    m_busyDelay->setSingleShot(true);
+    m_busyDelay->setInterval(350);
+    m_busyIdle = new QTimer(this);
+    m_busyIdle->setSingleShot(true);
+    m_busyIdle->setInterval(1600);
+
+    connect(m_busyDelay, &QTimer::timeout, this, &MainWindow::showBusyHint);
+    connect(m_busyIdle, &QTimer::timeout, this, &MainWindow::hideBusyHint);
+
+    connect(m_runner, &ProcessRunner::started, this, [this]() {
+        m_busyIdle->stop();
+        if (!m_busyShown)
+            m_busyDelay->start();
+    });
+
+    const auto taskOver = [this]() {
+        m_busyDelay->stop();
+        if (m_busyShown)
+            m_busyIdle->start();
+    };
+    connect(m_runner, &ProcessRunner::finished, this,
+            [taskOver](int) { taskOver(); });
+    connect(m_runner, &ProcessRunner::failed, this,
+            [taskOver](const QString &) { taskOver(); });
 }
 
 // ---------------------------------------------------------------- 关于
@@ -859,7 +890,7 @@ void MainWindow::startAutoCheck()
     ++m_flow;
 
     clearLog();
-    appendLog("请等待，正在检测网络，电脑可能会出现短暂卡顿，此时请勿进行任何操作……");
+    appendLog("正在检测网络，大约需要十几秒，请稍候……");
 
     // 启动 ping 检测；结果在 handleAutoCheckPing() 中处理
     m_task = Task::PingAutoCheck;
@@ -4440,6 +4471,28 @@ void MainWindow::appendLog(const QString &text)
 void MainWindow::clearLog()
 {
     ui->textBrowser->clear();
+}
+
+void MainWindow::showBusyHint()
+{
+    if (m_busyShown)
+        return;
+
+    m_busyShown = true;
+    ui->logPanel->setVisible(true);
+
+    // 面板刚显示时先滚到最新一行，让用户立刻看到"正在……"的提示
+    QScrollBar *bar = ui->textBrowser->verticalScrollBar();
+    bar->setValue(bar->maximum());
+}
+
+void MainWindow::hideBusyHint()
+{
+    if (!m_busyShown)
+        return;
+
+    m_busyShown = false;
+    ui->logPanel->setVisible(false);
 }
 
 void MainWindow::showMessage(const QString &title, const QString &text,
