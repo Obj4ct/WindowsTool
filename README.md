@@ -212,21 +212,6 @@ WindowsTool/
 
 欢迎提交 Issue 与 Pull Request。
 
-1. Fork 本仓库，从 `master` 切出功能分支；
-2. 保持改动聚焦：一个 PR 只做一件事，不混入无关格式化；
-3. 提交前运行 `.\build.ps1 -Config Release` 与 `python tests\uitest.py build\Release\WindowsTool.exe`；
-4. 新增或修改功能时同步更新 `docs/功能清单.md`（该文件仅本地维护，不提交）；
-5. PR 描述写清「改了什么、为什么改、怎么验证」。
-
-### 代码约定
-
-- C++ 源码统一 UTF-8 无 BOM；MSVC 由构建配置加 `/utf-8`。
-- `ps1/` 脚本统一 UTF-8 with BOM，向标准输出只打印一行带标记前缀的 JSON
-  （如 `PORTS_JSON:`），中文提示由 Qt 侧组装。
-- `bat/` 脚本使用 GBK 编码（cmd 代码页 936），修改时不要用 UTF-8 工具整体改写。
-- 所有破坏性操作必须有二次确认；长任务之间用 `claimTask()` 做并发保护。
-- `.ui` 中的控件通过 `objectName` 在 `resources/style.qss` 定义样式，新增卡片需同步选择器。
-
 ---
 
 ## License
