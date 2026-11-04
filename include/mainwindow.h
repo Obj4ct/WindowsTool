@@ -12,6 +12,8 @@
 #include <QJsonObject>
 #include <QMainWindow>
 #include <QList>
+
+#include "netdiag.h"
 #include <QMessageBox>
 #include <QString>
 
@@ -50,6 +52,7 @@ private:
         None,
         PingAutoCheck,   ///< 自动检测流程中的 ping
         DnsCheck,        ///< DNS 解析检查
+        NetDiagSnapshot, ///< 分层诊断快照（netdiag.ps1）
         FixDnsAuto,      ///< 自动检测触发的修复，完成后询问用户
         FixDnsManual,    ///< 用户手动刷新网络配置，完成后仅记录日志
         NetInfo,         ///< ipconfig
@@ -109,6 +112,15 @@ private:
     void handleNetworkInfo();
     void runFixDns(bool askAfter);
     void askNetworkRecovered();
+
+    // 分层诊断（阶段 2）
+    void startLegacyAutoCheck();
+    void handleNetDiagSnapshot();
+    void startDnsProbe();
+    void handleDnsProbeCompleted(const QVector<DnsProbe::Result> &results);
+    void renderDiagResult(const NetDiag::DiagResult &result);
+    void clearDiagRows();
+    void addDiagRow(const NetDiag::CheckItem &item);
 
     // 系统体检
     void runHealthCheck();
@@ -443,6 +455,15 @@ private:
      * 避免旧流程覆盖新任务或弹出无关弹窗。
      */
     int m_flow = 0;
+
+    // 分层诊断：快照任务结束后由 AsyncRunner 承接 DNS 探测（不占 m_task，
+    // 新任务到来时会被 claimTask 取消）
+    DnsProbe::AsyncRunner *m_dnsRunner = nullptr;
+    NetDiag::Snapshot m_diagSnapshot;
+    QStringList m_diagBackupServers;
+    bool m_diagProbing = false;
+    bool m_diagRetried = false;
+    int m_diagFlow = 0;
 };
 
 #endif // MAINWINDOW_H

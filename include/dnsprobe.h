@@ -10,8 +10,13 @@
 #define DNSPROBE_H
 
 #include <QByteArray>
+#include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QVector>
+
+class QTimer;
+class QUdpSocket;
 
 /**
  * 极简 UDP DNS 探测器（只查 A 记录）。
@@ -63,6 +68,46 @@ bool parseResponse(const QByteArray &packet, quint16 expectedId,
  */
 Result query(const QString &server, const QString &domain,
              int timeoutMs = 2000, quint16 port = 53);
+
+/**
+ * 非阻塞的多服务器 DNS 探测器（供 UI 使用）。
+ *
+ * 一次并发查询多个服务器，总预算一个 timeout，事件驱动，不占线程、
+ * 不阻塞界面；超时未响应的服务器标记为 NoResponse。
+ */
+class AsyncRunner : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit AsyncRunner(QObject *parent = nullptr);
+
+    /** 开始探测；servers 去重，最多取前 4 个 */
+    void start(const QStringList &servers, const QString &domain,
+               int timeoutMs = 1500);
+
+    void cancel();
+    bool isRunning() const { return m_active; }
+
+signals:
+    void completed(const QVector<DnsProbe::Result> &results);
+
+private:
+    void onReadyRead();
+    void finishAll();
+
+    struct Pending {
+        QString server;
+        quint16 id = 0;
+    };
+
+    QUdpSocket *m_socket = nullptr;
+    QTimer *m_timer = nullptr;
+    QVector<Pending> m_pending;
+    QVector<Result> m_results;
+    int m_timeoutMs = 0;
+    bool m_active = false;
+};
 
 } // namespace DnsProbe
 

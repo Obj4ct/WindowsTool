@@ -25,6 +25,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsOpacityEffect>
 #include <QHash>
@@ -325,6 +326,7 @@ ProcessRunner *MainWindow::createRunner()
             this, [this](const QString &text) {
                 // 体检/启动项/端口/大文件/磁盘/硬件脚本只输出一行 JSON 标记，不把原始数据刷进控制台
                 if (m_task == Task::HealthCheck || m_task == Task::StartupList
+                    || m_task == Task::NetDiagSnapshot
                     || m_task == Task::PortsList || m_task == Task::LargeFiles
                     || m_task == Task::DuplicateScan || m_task == Task::DuplicateDelete
                     || m_task == Task::DiskHealth || m_task == Task::HwInfo
@@ -1065,6 +1067,11 @@ void MainWindow::setupNetwork()
         connect(preset.first, &QAbstractButton::clicked, this,
                 [this, servers, label] { applyDns(servers, label); });
     }
+
+    // 分层诊断：非阻塞 DNS 探测器，事件驱动，不占线程
+    m_dnsRunner = new DnsProbe::AsyncRunner(this);
+    connect(m_dnsRunner, &DnsProbe::AsyncRunner::completed,
+            this, &MainWindow::handleDnsProbeCompleted);
 }
 
 /**
@@ -1085,6 +1092,9 @@ void MainWindow::dispatchTaskFinished(int exitCode)
         break;
     case Task::DnsCheck:
         handleDnsCheck();
+        break;
+    case Task::NetDiagSnapshot:
+        handleNetDiagSnapshot();
         break;
     case Task::FixDnsAuto:
         recordOperation(QStringLiteral("网络修复"),
@@ -1306,11 +1316,279 @@ void MainWindow::startAutoCheck()
     ++m_flow;
 
     clearLog();
-    appendLog("正在检测网络，大约需要十几秒，请稍候……");
+    appendLog("正在分层诊断网络，稍等片刻……");
 
-    // 启动 ping 检测；结果在 handleAutoCheckPing() 中处理
+    clearDiagRows();
+    ui->netDiagSummary->setText(QStringLiteral("正在读取网卡、路由与 DNS 配置……"));
+    ui->netDiagSummary->setProperty("state", QString());
+    ui->netDiagSummary->style()->unpolish(ui->netDiagSummary);
+    ui->netDiagSummary->style()->polish(ui->netDiagSummary);
+    ui->netDiagHint->setText(
+        QStringLiteral("依次检查网卡、路由、DNS、目标连接与网站响应，只报告首个出问题的环节"));
+
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/netdiag.ps1"));
+    if (!QFileInfo::exists(script)) {
+        appendLog("未找到 ps1\\netdiag.ps1，改用传统检测……");
+        startLegacyAutoCheck();
+        return;
+    }
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::NetDiagSnapshot;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+/** 诊断脚本缺失或输出损坏时的降级路径：沿用旧的 ping → DNS 串联检测 */
+void MainWindow::startLegacyAutoCheck()
+{
+    ui->netDiagSummary->setText(QStringLiteral("诊断脚本不可用，已改用传统检测"));
+    ui->netDiagSummary->setProperty("state", QString());
+    ui->netDiagSummary->style()->unpolish(ui->netDiagSummary);
+    ui->netDiagSummary->style()->polish(ui->netDiagSummary);
     m_task = Task::PingAutoCheck;
     m_runner->runCommand(QStringLiteral("ping www.baidu.com"));
+}
+
+/** netdiag.ps1 执行完毕：解析快照，成功则继续 DNS 探测，失败则降级 */
+void MainWindow::handleNetDiagSnapshot()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("NETDIAG_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QString error;
+    m_diagSnapshot = NetDiag::parseSnapshot(payload.toUtf8(), &error);
+    if (!m_diagSnapshot.error.isEmpty()) {
+        appendLog("-------------------");
+        appendLog(QStringLiteral("读取网络状态失败：%1").arg(m_diagSnapshot.error));
+        appendLog("改用传统检测继续……");
+        startLegacyAutoCheck();
+        return;
+    }
+
+    startDnsProbe();
+}
+
+/** 收集在线网卡的 DNS 服务器，交给非阻塞探测器并发查询 */
+void MainWindow::startDnsProbe()
+{
+    QStringList primary;
+    QStringList backup;
+    const auto collect = [](const NetDiag::AdapterInfo &adapter, QStringList *target,
+                            const QStringList &exclude) {
+        for (const QString &server : adapter.dns) {
+            if (exclude.contains(server) || target->contains(server))
+                continue;
+            target->append(server);
+        }
+    };
+
+    // 主探测用默认路由网卡的 DNS；其余在线网卡的 DNS 留作备用。
+    // 家用路由器的 DNS 偶尔响应慢，这时后备服务器能避免误判成解析失败。
+    for (const NetDiag::AdapterInfo &adapter : m_diagSnapshot.adapters) {
+        if (adapter.name == m_diagSnapshot.defaultAdapter)
+            collect(adapter, &primary, QStringList());
+    }
+    for (const NetDiag::AdapterInfo &adapter : m_diagSnapshot.adapters) {
+        if (adapter.name == m_diagSnapshot.defaultAdapter)
+            continue;
+        if (adapter.status.compare(QLatin1String("Up"), Qt::CaseInsensitive) == 0)
+            collect(adapter, &backup, primary);
+    }
+
+    if (primary.isEmpty()) {
+        primary = backup;
+        backup.clear();
+    }
+
+    m_diagBackupServers = backup;
+    m_diagRetried = false;
+
+    if (primary.isEmpty() || !m_dnsRunner) {
+        handleDnsProbeCompleted(QVector<DnsProbe::Result>());
+        return;
+    }
+
+    appendLog(QStringLiteral("正在探测 %1 个 DNS 服务器的响应……").arg(primary.size()));
+    ui->netDiagSummary->setText(QStringLiteral("正在探测 DNS 响应……"));
+
+    m_diagProbing = true;
+    m_diagFlow = m_flow;
+    m_dnsRunner->start(primary, QStringLiteral("www.baidu.com"), 1500);
+}
+
+/** DNS 探测结束：汇总 L1→L7 结论、渲染面板并按首个失败层决定下一步 */
+void MainWindow::handleDnsProbeCompleted(const QVector<DnsProbe::Result> &results)
+{
+    const bool wasProbing = m_diagProbing;
+    m_diagProbing = false;
+
+    // 探测期间用户开始了别的任务，这次结果作废
+    if (wasProbing && m_diagFlow != m_flow)
+        return;
+
+    // 主 DNS 全部没响应时，用其它在线网卡的 DNS 复查一次，避免路由器
+    // 偶发慢响应就把正常网络判成「DNS 解析失败」而误触发修复。
+    bool anyOk = false;
+    for (const DnsProbe::Result &item : results) {
+        if (item.status == DnsProbe::Status::Ok) {
+            anyOk = true;
+            break;
+        }
+    }
+    if (wasProbing && !anyOk && !m_diagRetried && !m_diagBackupServers.isEmpty()
+        && m_dnsRunner) {
+        m_diagRetried = true;
+        m_diagProbing = true;
+        appendLog("主 DNS 未响应，正在用备用 DNS 服务器复查……");
+        ui->netDiagSummary->setText(QStringLiteral("主 DNS 未响应，正在复查……"));
+        m_dnsRunner->start(m_diagBackupServers, QStringLiteral("www.baidu.com"), 1500);
+        return;
+    }
+
+    QVector<DnsProbe::Result> effective = results;
+    if (m_diagRetried && anyOk) {
+        // 备用复查成功：只保留成功的服务器。其它网卡上失效的 DNS 配置
+        // 与当前网络无关，不应变成用户需要处理的告警。
+        effective.clear();
+        for (const DnsProbe::Result &item : results) {
+            if (item.status == DnsProbe::Status::Ok)
+                effective.append(item);
+        }
+    }
+
+    const NetDiag::DiagResult result = NetDiag::diagnose(m_diagSnapshot, effective);
+    renderDiagResult(result);
+
+    appendLog("-------------------");
+    for (const NetDiag::CheckItem &item : result.items) {
+        if (item.status == NetDiag::Status::Skip)
+            continue;
+        appendLog(QStringLiteral("%1：%2").arg(item.name, item.detail));
+    }
+
+    if (!result.hasFailure) {
+        appendLog("-------------------");
+        appendLog("网络各层检查通过，自动检测完成");
+        showMessage("网络连接正常",
+                    "链路、路由与 DNS 解析都正常，没有发现需要修复的问题。");
+        return;
+    }
+
+    if (result.firstFailed == NetDiag::Layer::Dns) {
+        appendLog("-------------------");
+        appendLog(QStringLiteral("DNS 解析异常：%1，正在尝试修复网络配置……")
+                      .arg(result.summary));
+        QTimer::singleShot(600, this, [this]() { runFixDns(true); });
+        return;
+    }
+
+    showMessage("网络检查发现问题",
+                QStringLiteral("%1\n\n建议：%2").arg(result.summary, result.suggestion),
+                QMessageBox::Warning);
+}
+
+/** 把诊断结论渲染到网络页的「分层诊断结果」卡片 */
+void MainWindow::renderDiagResult(const NetDiag::DiagResult &result)
+{
+    clearDiagRows();
+    for (const NetDiag::CheckItem &item : result.items)
+        addDiagRow(item);
+
+    QString state = QStringLiteral("ok");
+    if (result.hasFailure) {
+        state = QStringLiteral("fail");
+    } else {
+        for (const NetDiag::CheckItem &item : result.items) {
+            if (item.status == NetDiag::Status::Warn) {
+                state = QStringLiteral("warn");
+                break;
+            }
+        }
+    }
+
+    ui->netDiagSummary->setText(result.summary);
+    ui->netDiagSummary->setProperty("state", state);
+    ui->netDiagSummary->style()->unpolish(ui->netDiagSummary);
+    ui->netDiagSummary->style()->polish(ui->netDiagSummary);
+    ui->netDiagHint->setText(result.suggestion);
+    ui->netDiagScroll->verticalScrollBar()->setValue(0);
+}
+
+/** 清空诊断行，只保留末尾的弹簧 */
+void MainWindow::clearDiagRows()
+{
+    while (QLayoutItem *item = ui->netDiagRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->netDiagRowsLayout->addStretch(1);
+}
+
+/** 追加一行诊断结果：状态徽标 + 层名 + 结论 + 耗时 */
+void MainWindow::addDiagRow(const NetDiag::CheckItem &item)
+{
+    QString badgeText;
+    QString state;
+    switch (item.status) {
+    case NetDiag::Status::Pass: badgeText = QStringLiteral("通过"); state = QStringLiteral("pass"); break;
+    case NetDiag::Status::Fail: badgeText = QStringLiteral("失败"); state = QStringLiteral("fail"); break;
+    case NetDiag::Status::Warn: badgeText = QStringLiteral("注意"); state = QStringLiteral("warn"); break;
+    case NetDiag::Status::Skip: badgeText = QStringLiteral("跳过"); state = QStringLiteral("skip"); break;
+    }
+
+    QFrame *row = new QFrame(ui->netDiagRows);
+    row->setObjectName(QStringLiteral("netDiagRow"));
+    row->setFrameShape(QFrame::NoFrame);
+
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(10, 8, 12, 8);
+    layout->setSpacing(10);
+
+    QLabel *statusLabel = new QLabel(badgeText, row);
+    statusLabel->setObjectName(QStringLiteral("netDiagStatus"));
+    statusLabel->setProperty("state", state);
+    statusLabel->setAlignment(Qt::AlignCenter);
+    statusLabel->setFixedWidth(40);
+
+    QLabel *nameLabel = new QLabel(item.name, row);
+    nameLabel->setObjectName(QStringLiteral("netDiagName"));
+    nameLabel->setFixedWidth(110);
+
+    QLabel *detailLabel = new QLabel(item.detail, row);
+    detailLabel->setObjectName(QStringLiteral("netDiagDetail"));
+    detailLabel->setWordWrap(true);
+    detailLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    detailLabel->setToolTip(item.detail);
+
+    QLabel *elapsedLabel = new QLabel(
+        item.elapsedMs >= 0 ? QStringLiteral("%1 ms").arg(item.elapsedMs) : QString(),
+        row);
+    elapsedLabel->setObjectName(QStringLiteral("netDiagElapsed"));
+    elapsedLabel->setFixedWidth(64);
+    elapsedLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    layout->addWidget(statusLabel, 0, Qt::AlignTop);
+    layout->addWidget(nameLabel, 0, Qt::AlignTop);
+    layout->addWidget(detailLabel, 1);
+    layout->addWidget(elapsedLabel, 0, Qt::AlignTop);
+
+    const int insertAt = qMax(0, ui->netDiagRowsLayout->count() - 1);
+    ui->netDiagRowsLayout->insertWidget(insertAt, row);
 }
 
 void MainWindow::handleAutoCheckPing()
@@ -6708,6 +6986,7 @@ QString MainWindow::currentTaskLabel() const
     switch (m_task) {
     case Task::PingAutoCheck:   return QStringLiteral("网络连通性检测");
     case Task::DnsCheck:        return QStringLiteral("DNS 解析检查");
+    case Task::NetDiagSnapshot: return QStringLiteral("网络分层诊断");
     case Task::FixDnsAuto:      return QStringLiteral("自动修复网络配置");
     case Task::FixDnsManual:    return QStringLiteral("刷新网络配置");
     case Task::NetInfo:         return QStringLiteral("读取网络信息");
@@ -6749,6 +7028,19 @@ QString MainWindow::currentTaskLabel() const
 
 bool MainWindow::claimTask(const QString &nextLabel)
 {
+    // DNS 探测不占进程、也不占用 m_task，但它仍是诊断流程的一部分。
+    // 用户这时点了别的功能，就让新任务直接接管：取消探测并让残留回调失效。
+    if (m_diagProbing) {
+        m_diagProbing = false;
+        if (m_dnsRunner)
+            m_dnsRunner->cancel();
+        ++m_flow;
+        ui->netDiagSummary->setText(QStringLiteral("诊断被新任务打断，本次结果未生成"));
+        ui->netDiagSummary->setProperty("state", QString());
+        ui->netDiagSummary->style()->unpolish(ui->netDiagSummary);
+        ui->netDiagSummary->style()->polish(ui->netDiagSummary);
+    }
+
     if (m_task == Task::None)
         return true;
 
@@ -6999,6 +7291,24 @@ void MainWindow::viewBackgroundResult(ProcessRunner *runner)
 
     const BackgroundTask entry = m_background.at(index);
     m_background.removeAt(index);
+
+    // 结果卡片同一时刻只显示一个，后台任务跑完时卡片可能已被后来启动的
+    // 任务顶掉；重放前先切回这张卡片，否则结果写进去也看不见
+    switch (entry.task) {
+    case Task::HealthCheck:      showSystemResultCard(ui->cardHealth); break;
+    case Task::StartupList:      showSystemResultCard(ui->cardStartup); break;
+    case Task::LargeFiles:       showSystemResultCard(ui->cardLargeFiles); break;
+    case Task::DuplicateScan:    showSystemResultCard(ui->cardDup); break;
+    case Task::DiskHealth:       showSystemResultCard(ui->cardDiskHealth); break;
+    case Task::HwInfo:           showSystemResultCard(ui->cardHwinfo); break;
+    case Task::Battery:          showSystemResultCard(ui->cardBattery); break;
+    case Task::ProcessList:      showSystemResultCard(ui->cardProcesses); break;
+    case Task::DiskUsage:        showSystemResultCard(ui->cardDiskUsage); break;
+    case Task::UninstallList:    showSystemResultCard(ui->cardUninstall); break;
+    case Task::DriverList:       showSystemResultCard(ui->cardDrivers); break;
+    case Task::Treemap:          showSystemResultCard(ui->cardTreemap); break;
+    default: break;
+    }
 
     // 临时把后台执行器当作当前执行器，处理函数读的就是它的输出
     ProcessRunner *idleRunner = m_runner;

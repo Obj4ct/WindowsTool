@@ -11,6 +11,7 @@
 #include <QElapsedTimer>
 #include <QHostAddress>
 #include <QRandomGenerator>
+#include <QTimer>
 #include <QUdpSocket>
 
 namespace {
@@ -238,6 +239,139 @@ Result query(const QString &server, const QString &domain,
     result.elapsedMs = static_cast<int>(timer.elapsed());
     result.status = Status::NoResponse;
     return result;
+}
+
+AsyncRunner::AsyncRunner(QObject *parent)
+    : QObject(parent)
+    , m_socket(new QUdpSocket(this))
+    , m_timer(new QTimer(this))
+{
+    m_timer->setSingleShot(true);
+    connect(m_timer, &QTimer::timeout, this, &AsyncRunner::finishAll);
+    connect(m_socket, &QUdpSocket::readyRead, this, &AsyncRunner::onReadyRead);
+}
+
+void AsyncRunner::start(const QStringList &servers, const QString &domain,
+                        int timeoutMs)
+{
+    cancel();
+    m_timeoutMs = timeoutMs;
+
+    QStringList unique;
+    for (const QString &server : servers) {
+        if (!unique.contains(server))
+            unique.append(server);
+    }
+    while (unique.size() > 4)
+        unique.removeLast();
+
+    if (unique.isEmpty()) {
+        emit completed(m_results);
+        return;
+    }
+
+    m_socket->close();
+    if (!m_socket->bind(QHostAddress(QHostAddress::AnyIPv4), 0)) {
+        for (const QString &server : unique) {
+            Result result;
+            result.server = server;
+            result.status = Status::Error;
+            result.error = QStringLiteral("无法创建本地 UDP 套接字");
+            m_results.append(result);
+        }
+        emit completed(m_results);
+        return;
+    }
+
+    for (const QString &server : unique) {
+        Result result;
+        result.server = server;
+
+        QHostAddress address(server);
+        if (address.isNull() || address.protocol() != QAbstractSocket::IPv4Protocol) {
+            result.status = Status::Error;
+            result.error = QStringLiteral("DNS 服务器地址无效");
+            m_results.append(result);
+            continue;
+        }
+
+        const quint16 id = static_cast<quint16>(
+            QRandomGenerator::global()->bounded(65536));
+        m_pending.append(Pending{server, id});
+        m_results.append(result);
+        m_socket->writeDatagram(buildQuery(domain, id), address, 53);
+    }
+
+    if (m_pending.isEmpty()) {
+        emit completed(m_results);
+        return;
+    }
+
+    m_active = true;
+    m_timer->start(timeoutMs);
+}
+
+void AsyncRunner::cancel()
+{
+    if (m_timer)
+        m_timer->stop();
+    m_pending.clear();
+    m_results.clear();
+    m_active = false;
+}
+
+void AsyncRunner::onReadyRead()
+{
+    while (m_socket->hasPendingDatagrams()) {
+        QByteArray data;
+        data.resize(static_cast<int>(m_socket->pendingDatagramSize()));
+        m_socket->readDatagram(data.data(), data.size());
+
+        for (int i = 0; i < m_pending.size(); ++i) {
+            Result parsed;
+            QString error;
+            if (!parseResponse(data, m_pending.at(i).id, &parsed, &error))
+                continue;
+
+            parsed.server = m_pending.at(i).server;
+            parsed.elapsedMs = m_timer->isActive()
+                ? m_timeoutMs - m_timer->remainingTime()
+                : m_timeoutMs;
+            for (int j = 0; j < m_results.size(); ++j) {
+                if (m_results.at(j).server == parsed.server) {
+                    m_results[j] = parsed;
+                    break;
+                }
+            }
+            m_pending.remove(i);
+            break;
+        }
+    }
+
+    if (m_pending.isEmpty())
+        finishAll();
+}
+
+void AsyncRunner::finishAll()
+{
+    if (!m_active)
+        return;
+
+    m_timer->stop();
+    for (const Pending &pending : m_pending) {
+        for (Result &result : m_results) {
+            if (result.server != pending.server)
+                continue;
+            if (result.status == Status::Error)
+                continue;
+            result.status = Status::NoResponse;
+            result.elapsedMs = m_timeoutMs;
+            break;
+        }
+    }
+    m_pending.clear();
+    m_active = false;
+    emit completed(m_results);
 }
 
 } // namespace DnsProbe

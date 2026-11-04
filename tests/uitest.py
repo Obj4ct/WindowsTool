@@ -299,12 +299,23 @@ def test_log_output(exe, shot_dir):
         check("启动并显示主窗口", True)
         time.sleep(2)
 
-        click_nav(hwnd, "网络问题")      # 磁贴都在网络页，先切页
-        click_tile(hwnd, "auto")   # 一键检测修复 → ping + DNS 检测
-        time.sleep(7)
+        # 用 UIA 精确定位控件，避免坐标点击在页面切换动画期间落空
+        switched, detail = uia_click_retry(proc.pid, "navNetworkBtn")
+        check("切到网络页", switched, detail)
+        time.sleep(0.5)
+        started, detail = uia_click_retry(proc.pid, "btn_autoCheck")
+        check("点击「一键检测修复」", started, detail)
+        time.sleep(8)
 
         user32.SetCursorPos(2000, 2000)
         time.sleep(0.4)
+
+        check("分层诊断卡片存在", uia_exists(proc.pid, "cardNetDiag"))
+        check("诊断汇总行存在", uia_exists(proc.pid, "netDiagSummary"))
+        check("诊断滚动区存在", uia_exists(proc.pid, "netDiagScroll"))
+        check("诊断结果已逐层渲染",
+              uia_exists_name_contains(proc.pid, "域名解析"),
+              "未找到 DNS 解析这一行")
 
         shot = os.path.join(shot_dir, "uitest_ping.png")
         if capture(hwnd, shot):
@@ -464,6 +475,23 @@ def uia_click(pid, automation_suffix):
     return "OK:" in r.stdout, (r.stdout + r.stderr).strip()
 
 
+def uia_click_retry(pid, automation_suffix, attempts=4, delay=0.8):
+    """
+    UIA 点击带重试。
+
+    Qt 的可访问性树在页面切换动画结束后才稳定，首次查询偶发 MISS，
+    重试几次可避免把启动/动画时序当成失败。
+    """
+    detail = ""
+    for i in range(attempts):
+        ok, detail = uia_click(pid, automation_suffix)
+        if ok:
+            return True, detail
+        if i < attempts - 1:
+            time.sleep(delay)
+    return False, detail
+
+
 def uia_click_async(pid, automation_suffix):
     """
     异步触发会弹模态框的按钮。
@@ -474,6 +502,47 @@ def uia_click_async(pid, automation_suffix):
     return subprocess.Popen(
         ["powershell", "-NoProfile", "-Command",
          _uia_click_script(pid, automation_suffix)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def uia_click_chain(pid, first_suffix, second_suffix, gap_ms=150):
+    """
+    在同一个 PowerShell 会话里连点两个按钮。
+
+    第一个点耗时任务，间隔 gap_ms 后点第二个，此时第一个任务仍在跑，
+    必然弹出「终止 / 后台运行」询问框。用同一个会话是为了避免两次
+    PowerShell 启动（约 0.6s）把间隔拉长到任务已经结束。
+    """
+    script = (
+        "Add-Type -AssemblyName UIAutomationClient;"
+        "Add-Type -AssemblyName UIAutomationTypes;"
+        "$root=[System.Windows.Automation.AutomationElement]::RootElement;"
+        "$pc=New-Object System.Windows.Automation.PropertyCondition("
+        "[System.Windows.Automation.AutomationElement]::ProcessIdProperty,"
+        + str(pid) + ");"
+        "$wins=$root.FindAll([System.Windows.Automation.TreeScope]::Children,$pc);"
+        "function Click-Suffix([string]$suffix){"
+        "foreach($w in $wins){"
+        "$els=$w.FindAll([System.Windows.Automation.TreeScope]::Descendants,"
+        "[System.Windows.Automation.Condition]::TrueCondition);"
+        "foreach($e in $els){"
+        "if($e.Current.AutomationId -like ('*'+$suffix)){"
+        "try{$p=$e.GetCurrentPattern("
+        "[System.Windows.Automation.InvokePattern]::Pattern);$p.Invoke();"
+        "return 'OK'}catch{}"
+        "try{$p=$e.GetCurrentPattern("
+        "[System.Windows.Automation.SelectionItemPattern]::Pattern);$p.Select();"
+        "return 'OK'}catch{}"
+        "try{$p=$e.GetCurrentPattern("
+        "[System.Windows.Automation.TogglePattern]::Pattern);$p.Toggle();"
+        "return 'OK'}catch{}"
+        "}}};return 'MISS'};"
+        "Click-Suffix '" + first_suffix + "';"
+        "Start-Sleep -Milliseconds " + str(gap_ms) + ";"
+        "Click-Suffix '" + second_suffix + "'"
+    )
+    return subprocess.Popen(
+        ["powershell", "-NoProfile", "-Command", script],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -651,7 +720,14 @@ def test_task_concurrency(exe, shot_dir):
 
 
 def test_background_result(exe, shot_dir):
-    """测试5：后台任务跑完后，可从后台窗口「查看结果」把输出渲染回卡片"""
+    """
+    测试5：后台任务跑完后，可从后台窗口「查看结果」把输出渲染回卡片。
+
+    后台任务用磁盘健康检测：脚本约 3s，足够慢到能被切到后台，又能在
+    几秒内结束拿到结果。之前用 C 盘树图，整盘递归扫描本机实测要 12 分钟，
+    这条用例必然超时；两个按钮改在同一次 UIA 会话里连点，保证第一个任务
+    还在跑时就能弹出并发询问框。
+    """
     print("\n[测试5] 后台任务结果回收")
     proc = subprocess.Popen([exe], cwd=os.path.dirname(exe))
     try:
@@ -661,34 +737,31 @@ def test_background_result(exe, shot_dir):
             return
         time.sleep(2)
 
-        switched, _ = uia_click(proc.pid, "navToolsBtn")
-        check("切到实用工具页", switched)
+        switched, _ = uia_click_retry(proc.pid, "navHardwareBtn")
+        check("切到硬件信息页", switched)
         time.sleep(0.5)
-        started, detail = uia_click(proc.pid, "btn_treemap")
-        check("启动 C 盘空间图（稍后转入后台）", started, detail)
-        time.sleep(1.0)
 
-        uia_click(proc.pid, "navNetworkBtn")
-        time.sleep(0.4)
-        uia_click_async(proc.pid, "btn_ports")
-        time.sleep(1.0)
+        uia_click_chain(proc.pid, "btn_diskHealth", "btn_hwinfo")
 
+        # 询问框一出现就按默认项：磁盘健康只有约 3s，拖久了任务会先结束，
+        # 那时再"放到后台"就只剩一个非只读入口，看不到「查看结果」
         dlg = find_window(PROMPT_TITLE, timeout=8, pid=proc.pid)
         check("弹出「终止 / 后台运行」询问框", dlg is not None)
         if dlg:
             press_enter(dlg)  # 默认按钮 = 放到后台并继续
             time.sleep(1.0)
-            check("日志栏出现「后台任务 1」入口",
-                  uia_exists_name(proc.pid, "后台任务 1"))
+            # 任务结束后入口文案会变成「查看结果」，所以这里只校验入口存在
+            check("日志栏出现后台任务入口",
+                  uia_exists(proc.pid, "bgTaskButton"))
 
-            # 等后台的 C 盘扫描结束（大目录可能要几十秒）
+            # 磁盘健康几秒内结束，放宽到 60s 兼容偶发的 PowerShell 冷启动变慢
             ready = False
-            deadline = time.time() + 150
+            deadline = time.time() + 60
             while time.time() < deadline:
                 if uia_exists_name(proc.pid, "查看结果"):
                     ready = True
                     break
-                time.sleep(4)
+                time.sleep(2)
             check("后台任务完成后出现「查看结果」", ready)
 
             if ready:
@@ -701,8 +774,11 @@ def test_background_result(exe, shot_dir):
                 clicked, detail = uia_click_name(proc.pid, "查看结果")
                 check("点击「查看结果」", clicked, detail)
                 time.sleep(1.5)
-                check("结果已渲染回卡片（出现树图汇总）",
-                      uia_exists_name_contains(proc.pid, "个文件夹"),
+                shot = os.path.join(shot_dir, "uitest_bg_replay.png")
+                if capture(hwnd, shot):
+                    check("保存结果回放截图", True, shot)
+                check("结果已渲染回卡片（出现磁盘汇总）",
+                      uia_exists_name_contains(proc.pid, "块磁盘"),
                       "未找到汇总行")
                 check("查看后后台任务入口消失",
                       not uia_exists(proc.pid, "bgTaskButton"))

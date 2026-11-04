@@ -129,7 +129,7 @@
 #cardMonitor, #cardBattery, #cardManage, #cardStartup, #cardProcesses,
 #cardUninstall, #cardDrivers, #cardTools, #cardLargeFiles,
 #cardDiskUsage, #cardTreemap, #cardDup, #cardContextMenu, #cardBootTime,
-#cardFileLock, #cardRestore, #cardOperations {
+#cardFileLock, #cardRestore, #cardOperations, #cardNetDiag {
     background: #FFFFFF;
     border: 1px solid #E7ECF4;
     border-radius: 14px;
@@ -149,7 +149,7 @@
 #startupTitle, #processesTitle, #uninstallTitle, #driversTitle,
 #largeFilesTitle, #diskUsageTitle, #treemapTitle, #dupTitle,
 #contextMenuTitle, #bootTimeTitle, #fileLockTitle, #restoreTitle,
-#operationsTitle {
+#operationsTitle, #netDiagTitle {
     color: #1A2433;
     font-size: 15px;
     font-weight: 600;
@@ -330,7 +330,8 @@
 #bootTimeScroll, #bootTimeRows,
 #fileLockScroll, #fileLockRows,
 #restoreScroll, #restoreRows,
-#operationsScroll, #operationsRows {
+#operationsScroll, #operationsRows,
+#netDiagScroll, #netDiagRows {
     background: transparent;
     border: none;
 }
@@ -340,9 +341,22 @@
 #driversSummary, #hostsSummary, #dnsSummary, #monitorSummary,
 #batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
 #fileLockSummary, #sfcSummary, #wupdateSummary,
-#treemapSummary, #restoreSummary, #operationsSummary {
+#treemapSummary, #restoreSummary, #operationsSummary, #netDiagSummary {
     color: #4A576F;
     font-size: 13px;
+}
+#netDiagSummary[state="ok"] {
+    color: #1F8A4C;
+}
+#netDiagSummary[state="warn"] {
+    color: #B7791F;
+}
+#netDiagSummary[state="fail"] {
+    color: #C0392B;
+}
+#netDiagHint {
+    color: #93A0B4;
+    font-size: 12px;
 }
 #sfcSummary[state="ok"], #wupdateSummary[state="ok"], #restoreSummary[state="ok"] {
     color: #1F8A4C;
@@ -420,6 +434,42 @@
     background: #EAF1FC;
     border-color: #C9D9F5;
     color: #2B6CD4;
+}
+
+/* ---------------- 分层诊断 ---------------- */
+#netDiagRow {
+    background: #FBFCFE;
+    border: 1px solid #EDF1F7;
+    border-radius: 10px;
+}
+#netDiagStatus {
+    font-size: 15px;
+    font-weight: 600;
+}
+#netDiagStatus[state="pass"] {
+    color: #1F8A4C;
+}
+#netDiagStatus[state="fail"] {
+    color: #C0392B;
+}
+#netDiagStatus[state="warn"] {
+    color: #B7791F;
+}
+#netDiagStatus[state="skip"] {
+    color: #A7B2C4;
+}
+#netDiagName {
+    color: #1E2A3B;
+    font-size: 13px;
+    font-weight: 600;
+}
+#netDiagDetail {
+    color: #7A879B;
+    font-size: 12px;
+}
+#netDiagElapsed {
+    color: #93A0B4;
+    font-size: 12px;
 }
 
 /* ---------------- 操作记录 ---------------- */
