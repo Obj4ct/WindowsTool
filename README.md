@@ -174,6 +174,8 @@ WindowsTool/
 ├── include/              # 头文件
 │   ├── mainwindow.h
 │   ├── netcheck.h        # 网络判断逻辑（可独立测试）
+│   ├── dnsprobe.h        # 极简 DNS 探测器（A 记录）
+│   ├── netdiag.h         # 分层网络诊断引擎
 │   ├── processrunner.h   # 异步进程执行器
 │   ├── sysmonitor.h      # 系统实时监控
 │   ├── treemapwidget.h   # 矩形树图控件
@@ -182,6 +184,8 @@ WindowsTool/
 │   ├── main.cpp
 │   ├── mainwindow.cpp
 │   ├── mainwindow.ui
+│   ├── dnsprobe.cpp
+│   ├── netdiag.cpp
 │   ├── processrunner.cpp
 │   ├── sysmonitor.cpp
 │   ├── treemapwidget.cpp

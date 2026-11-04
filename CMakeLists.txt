@@ -23,7 +23,7 @@ set(CMAKE_AUTOUIC_SEARCH_PATHS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 # Widgets 提供 GUI。主程序不依赖 QtTest；
 # 单元测试目标在 BUILD_TESTING 打开时单独链接 Qt5::Test。
-find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets)
+find_package(Qt5 5.15 REQUIRED COMPONENTS Widgets Network)
 
 set(APP_SOURCES
     src/main.cpp
@@ -32,9 +32,13 @@ set(APP_SOURCES
     src/sysmonitor.cpp
     src/treemapwidget.cpp
     src/uiicons.cpp
+    src/dnsprobe.cpp
+    src/netdiag.cpp
     include/mainwindow.h
     include/processrunner.h
     include/netcheck.h
+    include/dnsprobe.h
+    include/netdiag.h
     include/sysmonitor.h
     include/treemapwidget.h
     include/uiicons.h
@@ -54,6 +58,7 @@ target_include_directories(WindowsTool PRIVATE
 
 target_link_libraries(WindowsTool PRIVATE
     Qt5::Widgets
+    Qt5::Network
     iphlpapi)
 
 # 源文件为 UTF-8 无 BOM，MSVC 默认按代码页 936(GBK) 解码，
@@ -116,5 +121,22 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME LogAppendTest COMMAND LogAppendTest)
+
+    # 分层网络诊断：DNS 报文解析 + 快照解析 + 各层判定（纯函数，不联网）
+    add_executable(NetDiagTest
+        tests/netdiagtest.cpp
+        src/dnsprobe.cpp
+        src/netdiag.cpp
+        include/dnsprobe.h
+        include/netdiag.h
+    )
+    target_include_directories(NetDiagTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(NetDiagTest PRIVATE Qt5::Test Qt5::Core Qt5::Network)
+    if(MSVC)
+        target_compile_options(NetDiagTest PRIVATE /utf-8)
+        set_property(TARGET NetDiagTest PROPERTY VS_GLOBAL_VcpkgApplocalDeps false)
+    endif()
+
+    add_test(NAME NetDiagTest COMMAND NetDiagTest)
 endif()
 

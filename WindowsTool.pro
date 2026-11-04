@@ -4,7 +4,7 @@
 # This file is part of WindowsTool and is distributed under the MIT License.
 # See the LICENSE file in the project root for the full license text.
 
-QT       += core gui
+QT       += core gui network
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -26,13 +26,21 @@ RC_ICONS = resources/tool.ico
 SOURCES += \
     src/main.cpp \
     src/mainwindow.cpp \
+    src/dnsprobe.cpp \
+    src/netdiag.cpp \
     src/processrunner.cpp \
+    src/sysmonitor.cpp \
+    src/treemapwidget.cpp \
     src/uiicons.cpp
 
 HEADERS += \
     include/mainwindow.h \
     include/processrunner.h \
     include/netcheck.h \
+    include/dnsprobe.h \
+    include/netdiag.h \
+    include/sysmonitor.h \
+    include/treemapwidget.h \
     include/uiicons.h
 
 FORMS += \

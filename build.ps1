@@ -310,7 +310,10 @@ if (-not $NoDeploy) {
         # "由于找不到 Qt5Widgetsd.dll，无法继续执行代码"。
         $deployArgs = @("--no-translations", "--no-system-d3d-compiler", "--no-opengl-sw")
         if ($isDebug) { $deployArgs += "--debug" } else { $deployArgs += "--release" }
-        $deployArgs += $outDir
+        # 指定主程序而不是目录：目录里同时存在多个测试 exe 时，
+        # windeployqt 可能挑中测试目标，漏掉主程序才需要的模块（如 Qt5Network）。
+        $mainExe = Join-Path $outDir "WindowsTool.exe"
+        if (Test-Path $mainExe) { $deployArgs += $mainExe } else { $deployArgs += $outDir }
 
         $rc = Invoke-Native -Exe $windeployqt -Arguments $deployArgs
         if ($rc -ne 0) {
@@ -325,7 +328,8 @@ if (-not $NoDeploy) {
         # 不含 Qt5Test：exe 并未导入它（QTest::qWait 由 QtCore 导出）。
         $suffix = if ($isDebug) { "d" } else { "" }
         $qtBin = Join-Path $QtPath "bin"
-        foreach ($dll in @("Qt5Core$suffix.dll", "Qt5Gui$suffix.dll", "Qt5Widgets$suffix.dll")) {
+        foreach ($dll in @("Qt5Core$suffix.dll", "Qt5Gui$suffix.dll",
+                           "Qt5Widgets$suffix.dll", "Qt5Network$suffix.dll")) {
             $src = Join-Path $qtBin $dll
             if (Test-Path $src) {
                 Copy-Item -Path $src -Destination (Join-Path $outDir $dll) -Force
@@ -346,7 +350,7 @@ if (-not $NoDeploy) {
 if ($Test) {
     Write-Step "构建单元测试"
 
-    $testTargets = @("NetCheckTest", "LogAppendTest")
+    $testTargets = @("NetCheckTest", "LogAppendTest", "NetDiagTest")
     foreach ($target in $testTargets) {
         $rc = Invoke-Native -Exe $cmake -Arguments @(
             "--build", $buildPath, "--config", $Config, "--target", $target
@@ -361,7 +365,8 @@ if ($Test) {
     $suffix = if ($Config -eq "Debug") { "d" } else { "" }
     $qtBin = Join-Path $QtPath "bin"
     foreach ($dll in @("Qt5Test$suffix.dll", "Qt5Core$suffix.dll",
-                       "Qt5Gui$suffix.dll", "Qt5Widgets$suffix.dll")) {
+                       "Qt5Gui$suffix.dll", "Qt5Widgets$suffix.dll",
+                       "Qt5Network$suffix.dll")) {
         $src = Join-Path $qtBin $dll
         if (Test-Path $src) {
             Copy-Item -Path $src -Destination (Join-Path $buildPath $Config) -Force
