@@ -321,6 +321,9 @@ def test_log_output(exe, shot_dir):
         check("目标连通性行存在",
               uia_exists_name_contains(proc.pid, "目标连通性"),
               "未找到多目标检测这一行")
+        check("诊断历史卡片存在",
+              uia_exists(proc.pid, "diagHistorySummary"),
+              "诊断完成后应显示诊断历史")
 
         # 打开 DNS 卡片（脚本只读，不会修改系统设置），确认新增按钮存在
         opened, detail = uia_click_retry(proc.pid, "btn_dns")

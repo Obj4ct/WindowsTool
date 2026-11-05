@@ -129,6 +129,13 @@ private:
     void clearDiagRows();
     void addDiagRow(const NetDiag::CheckItem &item);
 
+    // 诊断历史（F12）
+    void loadDiagHistory();
+    void appendDiagHistory(const NetDiag::DiagResult &result);
+    void refreshDiagHistory();
+    void showDiagHistoryEntry(int index);
+    QString diagHistoryFilePath() const;
+
     // 系统体检
     void runHealthCheck();
     void handleHealthCheck();
@@ -502,6 +509,13 @@ private:
     NetDiag::DiagResult m_lastDiagResult;
     QString m_diagGeneratedAt;
     bool m_hasDiagReport = false;
+
+    /** 诊断历史记录（最多保留 20 条，最新的在最前） */
+    struct DiagHistoryEntry {
+        QString time;
+        NetDiag::DiagResult result;
+    };
+    QVector<DiagHistoryEntry> m_diagHistory;
 };
 
 #endif // MAINWINDOW_H

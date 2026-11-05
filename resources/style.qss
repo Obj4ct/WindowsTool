@@ -129,7 +129,8 @@
 #cardMonitor, #cardBattery, #cardManage, #cardStartup, #cardProcesses,
 #cardUninstall, #cardDrivers, #cardTools, #cardLargeFiles,
 #cardDiskUsage, #cardTreemap, #cardDup, #cardContextMenu, #cardBootTime,
-#cardFileLock, #cardRestore, #cardOperations, #cardNetDiag {
+#cardFileLock, #cardRestore, #cardOperations, #cardNetDiag,
+#cardDiagHistory {
     background: #FFFFFF;
     border: 1px solid #E7ECF4;
     border-radius: 14px;
@@ -149,7 +150,7 @@
 #startupTitle, #processesTitle, #uninstallTitle, #driversTitle,
 #largeFilesTitle, #diskUsageTitle, #treemapTitle, #dupTitle,
 #contextMenuTitle, #bootTimeTitle, #fileLockTitle, #restoreTitle,
-#operationsTitle, #netDiagTitle {
+#operationsTitle, #netDiagTitle, #diagHistoryTitle {
     color: #1A2433;
     font-size: 15px;
     font-weight: 600;
@@ -331,7 +332,8 @@
 #fileLockScroll, #fileLockRows,
 #restoreScroll, #restoreRows,
 #operationsScroll, #operationsRows,
-#netDiagScroll, #netDiagRows {
+#netDiagScroll, #netDiagRows,
+#diagHistoryScroll, #diagHistoryRows {
     background: transparent;
     border: none;
 }
@@ -341,7 +343,8 @@
 #driversSummary, #hostsSummary, #dnsSummary, #dnsSpeedResult, #monitorSummary,
 #batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
 #fileLockSummary, #sfcSummary, #wupdateSummary,
-#treemapSummary, #restoreSummary, #operationsSummary, #netDiagSummary {
+#treemapSummary, #restoreSummary, #operationsSummary, #netDiagSummary,
+#diagHistorySummary {
     color: #4A576F;
     font-size: 13px;
 }
@@ -470,6 +473,50 @@
 #netDiagElapsed {
     color: #93A0B4;
     font-size: 12px;
+}
+
+/* ---------------- 诊断历史 ---------------- */
+#diagHistoryRow {
+    background: #FBFCFE;
+    border: 1px solid #EDF1F7;
+    border-radius: 10px;
+}
+#diagHistoryTime {
+    color: #7A879B;
+    font-size: 12px;
+}
+#diagHistoryText {
+    color: #1E2A3B;
+    font-size: 13px;
+    font-weight: 600;
+}
+#diagHistoryCompare {
+    color: #93A0B4;
+    font-size: 12px;
+}
+#diagHistoryState {
+    font-size: 12px;
+    font-weight: 600;
+}
+#diagHistoryState[state="ok"] {
+    color: #1F8A4C;
+}
+#diagHistoryState[state="warn"] {
+    color: #B7791F;
+}
+#diagHistoryState[state="fail"] {
+    color: #C0392B;
+}
+#diagHistoryViewBtn {
+    background: #FFFFFF;
+    border: 1px solid #E1E7F0;
+    border-radius: 8px;
+    color: #2B6CD4;
+    font-size: 12px;
+}
+#diagHistoryViewBtn:hover {
+    background: #F5F8FE;
+    border-color: #B9CDF0;
 }
 
 /* ---------------- 操作记录 ---------------- */

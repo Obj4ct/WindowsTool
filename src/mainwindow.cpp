@@ -1180,6 +1180,9 @@ void MainWindow::setupNetwork()
     m_targetRunner = new NetProbe::TargetRunner(this);
     connect(m_targetRunner, &NetProbe::TargetRunner::finished,
             this, &MainWindow::handleTargetProbeFinished);
+
+    // 诊断历史：启动时载入本地记录，检测完成后自动追加
+    loadDiagHistory();
 }
 
 /**
@@ -1710,6 +1713,7 @@ void MainWindow::completeDiagnosis(const NetProbe::Outcome &outcome)
         QStringLiteral("yyyy-MM-dd HH:mm"));
     m_hasDiagReport = true;
 
+    appendDiagHistory(result);
     renderDiagResult(result);
 
     appendLog("-------------------");
@@ -1850,6 +1854,266 @@ void MainWindow::addDiagRow(const NetDiag::CheckItem &item)
 
     const int insertAt = qMax(0, ui->netDiagRowsLayout->count() - 1);
     ui->netDiagRowsLayout->insertWidget(insertAt, row);
+}
+
+// ---------------------------------------------------------------- 诊断历史
+
+QString MainWindow::diagHistoryFilePath() const
+{
+    const QString dir = QStandardPaths::writableLocation(
+        QStandardPaths::AppLocalDataLocation);
+    return QDir(dir).filePath(QStringLiteral("diag-history.json"));
+}
+
+/** 启动时载入最近 20 次诊断记录；文件缺失或损坏时静默跳过 */
+void MainWindow::loadDiagHistory()
+{
+    m_diagHistory.clear();
+
+    QFile file(diagHistoryFilePath());
+    if (file.open(QIODevice::ReadOnly)) {
+        QJsonParseError parseError{};
+        const QJsonDocument document =
+            QJsonDocument::fromJson(file.readAll(), &parseError);
+        if (parseError.error == QJsonParseError::NoError && document.isArray()) {
+            for (const QJsonValue &value : document.array()) {
+                if (m_diagHistory.size() >= 20)
+                    break;
+                if (!value.isObject())
+                    continue;
+
+                const QJsonObject record = value.toObject();
+                DiagHistoryEntry entry;
+                entry.time = record.value(QStringLiteral("time")).toString();
+                entry.result.hasFailure =
+                    record.value(QStringLiteral("hasFailure")).toBool();
+                const int failedLayer =
+                    record.value(QStringLiteral("firstFailed")).toInt();
+                entry.result.firstFailed =
+                    (failedLayer >= 1 && failedLayer <= 8)
+                        ? static_cast<NetDiag::Layer>(failedLayer)
+                        : NetDiag::Layer::App;
+                entry.result.summary =
+                    record.value(QStringLiteral("summary")).toString();
+                entry.result.suggestion =
+                    record.value(QStringLiteral("suggestion")).toString();
+
+                for (const QJsonValue &itemValue
+                     : record.value(QStringLiteral("items")).toArray()) {
+                    if (!itemValue.isObject())
+                        continue;
+                    const QJsonObject data = itemValue.toObject();
+                    NetDiag::CheckItem item;
+                    const int layer =
+                        data.value(QStringLiteral("layer")).toInt();
+                    item.layer = (layer >= 1 && layer <= 8)
+                                     ? static_cast<NetDiag::Layer>(layer)
+                                     : NetDiag::Layer::Link;
+                    const int status =
+                        data.value(QStringLiteral("status")).toInt();
+                    item.status = (status >= 0 && status <= 3)
+                                      ? static_cast<NetDiag::Status>(status)
+                                      : NetDiag::Status::Skip;
+                    item.name = data.value(QStringLiteral("name")).toString();
+                    item.detail =
+                        data.value(QStringLiteral("detail")).toString();
+                    item.elapsedMs =
+                        data.value(QStringLiteral("elapsedMs")).toInt(-1);
+                    entry.result.items.append(item);
+                }
+
+                m_diagHistory.append(entry);
+            }
+        }
+    }
+
+    refreshDiagHistory();
+}
+
+/** 把本次诊断结果写入本地历史并刷新列表 */
+void MainWindow::appendDiagHistory(const NetDiag::DiagResult &result)
+{
+    DiagHistoryEntry entry;
+    entry.time = QDateTime::currentDateTime().toString(
+        QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+    entry.result = result;
+    m_diagHistory.prepend(entry);
+    while (m_diagHistory.size() > 20)
+        m_diagHistory.removeLast();
+
+    const QString path = diagHistoryFilePath();
+    if (!QDir().mkpath(QFileInfo(path).absolutePath())) {
+        appendLog(QStringLiteral("诊断历史目录创建失败：%1").arg(path));
+        refreshDiagHistory();
+        return;
+    }
+
+    QJsonArray records;
+    for (const DiagHistoryEntry &entryItem : m_diagHistory) {
+        QJsonArray items;
+        for (const NetDiag::CheckItem &check : entryItem.result.items) {
+            QJsonObject data;
+            data.insert(QStringLiteral("layer"), static_cast<int>(check.layer));
+            data.insert(QStringLiteral("name"), check.name);
+            data.insert(QStringLiteral("status"), static_cast<int>(check.status));
+            data.insert(QStringLiteral("detail"), check.detail);
+            data.insert(QStringLiteral("elapsedMs"), check.elapsedMs);
+            items.append(data);
+        }
+
+        QJsonObject record;
+        record.insert(QStringLiteral("time"), entryItem.time);
+        record.insert(QStringLiteral("hasFailure"), entryItem.result.hasFailure);
+        record.insert(QStringLiteral("firstFailed"),
+                      static_cast<int>(entryItem.result.firstFailed));
+        record.insert(QStringLiteral("summary"), entryItem.result.summary);
+        record.insert(QStringLiteral("suggestion"), entryItem.result.suggestion);
+        record.insert(QStringLiteral("items"), items);
+        records.append(record);
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        appendLog(QStringLiteral("诊断历史写入失败：%1").arg(path));
+        refreshDiagHistory();
+        return;
+    }
+    file.write(QJsonDocument(records).toJson(QJsonDocument::Compact));
+
+    refreshDiagHistory();
+}
+
+/** 重建「诊断历史」卡片：时间 + 结论 + 与上一次的对比 */
+void MainWindow::refreshDiagHistory()
+{
+    while (QLayoutItem *item = ui->diagHistoryRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->diagHistoryRowsLayout->addStretch(1);
+
+    if (m_diagHistory.isEmpty()) {
+        ui->cardDiagHistory->setVisible(false);
+        return;
+    }
+
+    ui->cardDiagHistory->setVisible(true);
+    ui->diagHistorySummary->setText(
+        QStringLiteral("共 %1 条记录 · 最近一次 %2")
+            .arg(m_diagHistory.size())
+            .arg(m_diagHistory.first().time));
+
+    for (int index = 0; index < m_diagHistory.size(); ++index) {
+        const DiagHistoryEntry &entry = m_diagHistory.at(index);
+
+        QString state = QStringLiteral("ok");
+        QString stateText = QStringLiteral("正常");
+        if (entry.result.hasFailure) {
+            state = QStringLiteral("fail");
+            stateText = QStringLiteral("失败");
+        } else {
+            for (const NetDiag::CheckItem &item : entry.result.items) {
+                if (item.status == NetDiag::Status::Warn) {
+                    state = QStringLiteral("warn");
+                    stateText = QStringLiteral("注意");
+                    break;
+                }
+            }
+        }
+
+        QString compareText = QStringLiteral("首次诊断记录");
+        if (index + 1 < m_diagHistory.size()) {
+            const NetDiag::DiagResult &older = m_diagHistory.at(index + 1).result;
+            const QString nowLayer =
+                entry.result.hasFailure
+                    ? NetDiag::layerLabel(entry.result.firstFailed)
+                    : QStringLiteral("全部通过");
+            const QString oldLayer =
+                older.hasFailure
+                    ? NetDiag::layerLabel(older.firstFailed)
+                    : QStringLiteral("全部通过");
+
+            if (!entry.result.hasFailure && !older.hasFailure) {
+                compareText = QStringLiteral("与上次一致：各层通过");
+            } else if (entry.result.hasFailure && older.hasFailure
+                       && entry.result.firstFailed == older.firstFailed) {
+                compareText = QStringLiteral("与上次相同：%1 仍有问题").arg(nowLayer);
+            } else if (!entry.result.hasFailure) {
+                compareText = QStringLiteral("较上次好转：%1 → 全部通过").arg(oldLayer);
+            } else if (!older.hasFailure) {
+                compareText = QStringLiteral("较上次变化：全部通过 → %1").arg(nowLayer);
+            } else {
+                compareText = QStringLiteral("较上次变化：%1 → %2")
+                                  .arg(oldLayer, nowLayer);
+            }
+        }
+
+        QFrame *row = new QFrame(ui->diagHistoryRows);
+        row->setObjectName(QStringLiteral("diagHistoryRow"));
+        row->setFrameShape(QFrame::NoFrame);
+
+        QHBoxLayout *layout = new QHBoxLayout(row);
+        layout->setContentsMargins(10, 8, 10, 8);
+        layout->setSpacing(10);
+
+        QLabel *timeLabel = new QLabel(entry.time, row);
+        timeLabel->setObjectName(QStringLiteral("diagHistoryTime"));
+        timeLabel->setFixedWidth(144);
+
+        QVBoxLayout *textLayout = new QVBoxLayout();
+        textLayout->setContentsMargins(0, 0, 0, 0);
+        textLayout->setSpacing(2);
+
+        QLabel *summaryLabel = new QLabel(entry.result.summary, row);
+        summaryLabel->setObjectName(QStringLiteral("diagHistoryText"));
+        summaryLabel->setWordWrap(true);
+        summaryLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        summaryLabel->setToolTip(entry.result.summary);
+
+        QLabel *compareLabel = new QLabel(compareText, row);
+        compareLabel->setObjectName(QStringLiteral("diagHistoryCompare"));
+        compareLabel->setWordWrap(true);
+
+        textLayout->addWidget(summaryLabel);
+        textLayout->addWidget(compareLabel);
+
+        QLabel *stateLabel = new QLabel(stateText, row);
+        stateLabel->setObjectName(QStringLiteral("diagHistoryState"));
+        stateLabel->setProperty("state", state);
+        stateLabel->setAlignment(Qt::AlignCenter);
+        stateLabel->setFixedWidth(44);
+
+        QPushButton *viewButton = new QPushButton(QStringLiteral("查看"), row);
+        viewButton->setObjectName(QStringLiteral("diagHistoryViewBtn"));
+        viewButton->setCursor(Qt::PointingHandCursor);
+        viewButton->setFixedSize(56, 28);
+        connect(viewButton, &QPushButton::clicked, this,
+                [this, index]() { showDiagHistoryEntry(index); });
+
+        layout->addWidget(timeLabel, 0, Qt::AlignTop);
+        layout->addLayout(textLayout, 1);
+        layout->addWidget(stateLabel, 0, Qt::AlignTop);
+        layout->addWidget(viewButton, 0, Qt::AlignTop);
+
+        const int insertAt = qMax(0, ui->diagHistoryRowsLayout->count() - 1);
+        ui->diagHistoryRowsLayout->insertWidget(insertAt, row);
+    }
+}
+
+/** 把某条历史记录重新渲染到「分层诊断结果」，不影响后续新检测 */
+void MainWindow::showDiagHistoryEntry(int index)
+{
+    if (index < 0 || index >= m_diagHistory.size())
+        return;
+
+    const DiagHistoryEntry &entry = m_diagHistory.at(index);
+    m_lastDiagResult = entry.result;
+    m_diagGeneratedAt = entry.time.left(16);
+    m_hasDiagReport = true;
+    renderDiagResult(entry.result);
+
+    appendLog(QStringLiteral("已载入 %1 的诊断记录").arg(entry.time));
 }
 
 void MainWindow::handleAutoCheckPing()
