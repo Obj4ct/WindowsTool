@@ -129,7 +129,7 @@
 #cardMonitor, #cardBattery, #cardManage, #cardStartup, #cardProcesses,
 #cardUninstall, #cardDrivers, #cardTools, #cardLargeFiles,
 #cardDiskUsage, #cardTreemap, #cardDup, #cardContextMenu, #cardBootTime,
-#cardFileLock, #cardRestore, #cardOperations, #cardNetDiag,
+#cardFileLock, #cardFakeCheck, #cardRestore, #cardOperations, #cardNetDiag,
 #cardDiagHistory {
     background: #FFFFFF;
     border: 1px solid #E7ECF4;
@@ -149,7 +149,8 @@
 #hwinfoTitle, #diskHealthTitle, #monitorTitle, #batteryTitle,
 #startupTitle, #processesTitle, #uninstallTitle, #driversTitle,
 #largeFilesTitle, #diskUsageTitle, #treemapTitle, #dupTitle,
-#contextMenuTitle, #bootTimeTitle, #fileLockTitle, #restoreTitle,
+#contextMenuTitle, #bootTimeTitle, #fileLockTitle, #fakeCheckTitle,
+#restoreTitle,
 #operationsTitle, #netDiagTitle, #diagHistoryTitle {
     color: #1A2433;
     font-size: 15px;
@@ -170,7 +171,7 @@
 #btn_diskHealth, #btn_hwinfo, #btn_battery, #btn_monitor,
 #btn_startup, #btn_process, #btn_uninstall, #btn_drivers,
 #btn_largeFiles, #btn_treemap, #btn_treedisk, #btn_dup, #btn_contextMenu,
-#btn_bootTime, #btn_fileLock {
+#btn_bootTime, #btn_fileLock, #btn_fakeCheck {
     background: #F7F9FD;
     border: 1px solid #E6ECF6;
     border-radius: 12px;
@@ -186,7 +187,7 @@
 #btn_diskHealth:hover, #btn_hwinfo:hover, #btn_battery:hover, #btn_monitor:hover,
 #btn_startup:hover, #btn_process:hover, #btn_uninstall:hover, #btn_drivers:hover,
 #btn_largeFiles:hover, #btn_treemap:hover, #btn_treedisk:hover, #btn_dup:hover, #btn_contextMenu:hover,
-#btn_bootTime:hover, #btn_fileLock:hover {
+#btn_bootTime:hover, #btn_fileLock:hover, #btn_fakeCheck:hover {
     background: #FFFFFF;
     border-color: #A9C4F5;
     color: #1C5FC9;
@@ -198,7 +199,7 @@
 #btn_diskHealth:pressed, #btn_hwinfo:pressed, #btn_battery:pressed, #btn_monitor:pressed,
 #btn_startup:pressed, #btn_process:pressed, #btn_uninstall:pressed, #btn_drivers:pressed,
 #btn_largeFiles:pressed, #btn_treemap:pressed, #btn_treedisk:pressed, #btn_dup:pressed, #btn_contextMenu:pressed,
-#btn_bootTime:pressed, #btn_fileLock:pressed {
+#btn_bootTime:pressed, #btn_fileLock:pressed, #btn_fakeCheck:pressed {
     background: #EDF3FD;
     border-color: #8FB4EE;
 }
@@ -210,7 +211,7 @@
 #btn_battery:disabled, #btn_monitor:disabled, #btn_startup:disabled, #btn_process:disabled,
 #btn_uninstall:disabled, #btn_drivers:disabled, #btn_largeFiles:disabled,
 #btn_treemap:disabled, #btn_treedisk:disabled,
-#btn_dup:disabled, #btn_contextMenu:disabled, #btn_bootTime:disabled, #btn_fileLock:disabled {
+#btn_dup:disabled, #btn_contextMenu:disabled, #btn_bootTime:disabled, #btn_fileLock:disabled, #btn_fakeCheck:disabled {
     background: #F6F8FB;
     border-color: #EBEFF5;
     color: #B6BFCC;
@@ -330,6 +331,7 @@
 #contextMenuScroll, #contextMenuRows,
 #bootTimeScroll, #bootTimeRows,
 #fileLockScroll, #fileLockRows,
+#fakeCheckScroll, #fakeCheckRows,
 #restoreScroll, #restoreRows,
 #operationsScroll, #operationsRows,
 #netDiagScroll, #netDiagRows,
@@ -342,7 +344,7 @@
 #hwinfoSummary, #processesSummary, #diskUsageSummary, #uninstallSummary,
 #driversSummary, #hostsSummary, #dnsSummary, #dnsSpeedResult, #monitorSummary,
 #batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
-#fileLockSummary, #sfcSummary, #wupdateSummary,
+#fileLockSummary, #fakeCheckSummary, #fakeCheckCompare, #sfcSummary, #wupdateSummary,
 #treemapSummary, #restoreSummary, #operationsSummary, #netDiagSummary,
 #diagHistorySummary {
     color: #4A576F;
@@ -374,7 +376,7 @@
 /* 行内小标签 */
 #startupSource, #portBadge, #largeFileSize, #hwBadge,
 #cmBadge, #bootBadge, #lockBadge, #dupBadge, #procBadge,
-#usageBadge, #appBadge {
+#usageBadge, #appBadge, #verifyBadge {
     border-radius: 8px;
     font-size: 11px;
     font-weight: 600;
@@ -382,7 +384,8 @@
 }
 
 #startupSource, #portBadge, #largeFileSize, #hwBadge,
-#cmBadge, #bootBadge, #lockBadge, #dupBadge {
+#cmBadge, #bootBadge, #lockBadge, #dupBadge,
+#verifyBadge {
     background: #EEF3FB;
     color: #3A66B0;
 }
@@ -416,6 +419,29 @@
 }
 #lockBadge[state="bad"] {
     background: #FDECEC;
+    color: #C0392B;
+}
+
+/* 伪装检查：结论徽章与比对提示 */
+#verifyBadge[state="ok"] {
+    background: #E8F6EE;
+    color: #2E8B57;
+}
+#verifyBadge[state="warn"] {
+    background: #FFF4E5;
+    color: #C77700;
+}
+#verifyBadge[state="fail"] {
+    background: #FDECEC;
+    color: #C0392B;
+}
+#fakeCheckSummary[state="ok"], #fakeCheckCompare[state="ok"] {
+    color: #1F8A4C;
+}
+#fakeCheckSummary[state="warn"], #fakeCheckCompare[state="warn"] {
+    color: #B7791F;
+}
+#fakeCheckSummary[state="fail"], #fakeCheckCompare[state="fail"] {
     color: #C0392B;
 }
 
@@ -577,16 +603,20 @@
 /* 行内主标题 / 副标题 */
 #startupName, #portName, #largeFileName, #diskName, #hwName,
 #healthName, #procName, #usageName, #appName, #driverName,
-#dupName, #cmName, #bootName, #lockName {
+#dupName, #cmName, #bootName, #lockName, #verifyName {
     color: #1E2A3B;
     font-size: 13px;
     font-weight: 600;
 }
 #startupCommand, #portDetail, #largeFilePath, #diskDetail, #hwDetail,
 #healthDetail, #procDetail, #usageDetail, #appDetail, #driverDetail,
-#dupDetail, #cmDetail, #bootDetail, #lockDetail {
+#dupDetail, #cmDetail, #bootDetail, #lockDetail, #verifyDetail,
+#verifyHashValue, #fakeCheckHash {
     color: #7A879B;
     font-size: 12px;
+}
+#verifyHashValue, #fakeCheckHash {
+    font-family: "Consolas", "Cascadia Mono", "Microsoft YaHei";
 }
 
 /* ---------------- Hosts 编辑 ---------------- */
@@ -762,7 +792,7 @@
 }
 
 /* ---------------- 文件占用查询 ---------------- */
-#fileLockPath {
+#fileLockPath, #fakeCheckExpected {
     background: #FFFFFF;
     border: 1px solid #E1E7F0;
     border-radius: 9px;
@@ -770,10 +800,10 @@
     font-size: 13px;
     padding: 7px 10px;
 }
-#fileLockPath:focus {
+#fileLockPath:focus, #fakeCheckExpected:focus {
     border-color: #A9C4F5;
 }
-#fileLockBrowseBtn {
+#fileLockBrowseBtn, #fakeCheckScanBtn, #fakeCheckCopyBtn {
     background: #FFFFFF;
     border: 1px solid #E1E7F0;
     border-radius: 9px;
@@ -781,12 +811,12 @@
     font-size: 13px;
     padding: 0 14px;
 }
-#fileLockBrowseBtn:hover {
+#fileLockBrowseBtn:hover, #fakeCheckScanBtn:hover, #fakeCheckCopyBtn:hover {
     background: #F5F8FE;
     border-color: #B9CDF0;
     color: #2B6CD4;
 }
-#fileLockCheckBtn {
+#fileLockCheckBtn, #fakeCheckPickBtn {
     background: #2F6FDE;
     border: 1px solid #2F6FDE;
     border-radius: 9px;
@@ -795,15 +825,16 @@
     font-weight: 600;
     padding: 0 18px;
 }
-#fileLockCheckBtn:hover {
+#fileLockCheckBtn:hover, #fakeCheckPickBtn:hover {
     background: #2860C8;
     border-color: #2860C8;
 }
-#fileLockCheckBtn:pressed {
+#fileLockCheckBtn:pressed, #fakeCheckPickBtn:pressed {
     background: #2453AE;
     border-color: #2453AE;
 }
-#fileLockCheckBtn:disabled {
+#fileLockCheckBtn:disabled, #fakeCheckPickBtn:disabled,
+#fakeCheckScanBtn:disabled, #fakeCheckCopyBtn:disabled {
     background: #E7ECF4;
     border-color: #E7ECF4;
     color: #B6BFCC;

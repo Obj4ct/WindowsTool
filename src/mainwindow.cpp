@@ -15,6 +15,7 @@
 #include "uiicons.h"
 
 #include <QAbstractButton>
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -28,6 +29,7 @@
 #include <QFrame>
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsOpacityEffect>
+#include <QGuiApplication>
 #include <QHash>
 #include <QHBoxLayout>
 #include <QJsonArray>
@@ -53,6 +55,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QUrl>
+#include <QUuid>
 #include <QVBoxLayout>
 
 using namespace NetCheck;
@@ -290,6 +293,67 @@ QVector<QPushButton *> dnsActionButtons(Ui::MainWindow *ui)
     return {ui->dnsAutoBtn,      ui->dnsAliBtn,     ui->dnsTencentBtn,
             ui->dns114Btn,       ui->dnsGoogleBtn,  ui->dnsBaiduBtn,
             ui->btn_applyDnsRecommend, ui->btn_restoreDns};
+}
+
+/** fakecheck.ps1 的风险等级 → 中文徽章 */
+QString fakeCheckRiskLabel(const QString &risk)
+{
+    if (risk == QLatin1String("high"))
+        return QStringLiteral("高风险");
+    if (risk == QLatin1String("suspicious"))
+        return QStringLiteral("可疑");
+    return QStringLiteral("正常");
+}
+
+/** 风险等级 → QSS 状态代号 */
+QString fakeCheckRiskState(const QString &risk)
+{
+    if (risk == QLatin1String("high"))
+        return QStringLiteral("fail");
+    if (risk == QLatin1String("suspicious"))
+        return QStringLiteral("warn");
+    return QStringLiteral("ok");
+}
+
+/** fakecheck.ps1 的风险原因代码 → 中文说明 */
+QString fakeCheckReasonLabel(const QString &code)
+{
+    if (code == QLatin1String("tampered"))
+        return QStringLiteral("签名与文件内容不匹配，文件可能被篡改");
+    if (code == QLatin1String("untrusted"))
+        return QStringLiteral("数字证书不受信任");
+    if (code == QLatin1String("sig-error"))
+        return QStringLiteral("数字签名校验失败");
+    if (code == QLatin1String("unsigned"))
+        return QStringLiteral("没有数字签名");
+    if (code == QLatin1String("header-mismatch"))
+        return QStringLiteral("扩展名与真实文件类型不符，可能被伪装");
+    if (code == QLatin1String("double-ext"))
+        return QStringLiteral("使用双扩展名，常见于伪装文件");
+    if (code == QLatin1String("system-name"))
+        return QStringLiteral("仿冒系统进程名，且不在系统目录");
+    if (code == QLatin1String("temp-dir"))
+        return QStringLiteral("位于临时目录且未通过签名校验");
+    return code;
+}
+
+/** 归一化哈希文本：去掉空白、连字符和常见前缀，统一为大写 */
+QString normalizeHashText(const QString &text)
+{
+    QString value = text;
+    value.remove(QLatin1Char(' '));
+    value.remove(QLatin1Char('\t'));
+    value.remove(QLatin1Char('-'));
+    value.remove(QLatin1Char(':'));
+    if (value.startsWith(QLatin1String("SHA256"), Qt::CaseInsensitive))
+        value.remove(0, 6);
+    else if (value.startsWith(QLatin1String("SHA1"), Qt::CaseInsensitive))
+        value.remove(0, 4);
+    else if (value.startsWith(QLatin1String("MD5"), Qt::CaseInsensitive))
+        value.remove(0, 3);
+    if (value.startsWith(QLatin1String("0X"), Qt::CaseInsensitive))
+        value.remove(0, 2);
+    return value.toUpper();
 }
 
 /** fixdns.ps1 的动作代码 → 中文描述 */
@@ -565,6 +629,7 @@ void MainWindow::setupTheme()
     ui->btn_contextMenu->setIcon(tileIcon(UiIcons::Icon::Dots));
     ui->btn_bootTime->setIcon(tileIcon(UiIcons::Icon::Rocket));
     ui->btn_fileLock->setIcon(tileIcon(UiIcons::Icon::Link));
+    ui->btn_fakeCheck->setIcon(tileIcon(UiIcons::Icon::ShieldCheck));
     ui->btn_treemap->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
 
     // 磁贴图标尺寸（QToolButton 不会自动跟随 QSS 的 icon-size）
@@ -584,6 +649,7 @@ void MainWindow::setupTheme()
                             ui->btn_largeFiles, ui->btn_treedisk,
                             ui->btn_dup, ui->btn_contextMenu,
                             ui->btn_bootTime, ui->btn_fileLock,
+                            ui->btn_fakeCheck,
                             ui->btn_treemap}) {
         b->setIconSize(QSize(30, 30));
     }
@@ -1297,6 +1363,9 @@ void MainWindow::dispatchTaskFinished(int exitCode)
     case Task::FileLock:
         handleFileLock();
         break;
+    case Task::FileVerify:
+        handleFakeCheck();
+        break;
     case Task::BootTime:
         handleBootTime();
         break;
@@ -1396,6 +1465,16 @@ void MainWindow::onTaskFailed(const QString &reason)
             QStringLiteral("统计失败：%1").arg(reason));
         if (m_treemap)
             m_treemap->showPlaceholder(QStringLiteral("统计失败，请重试"));
+    }
+
+    if (m_task == Task::FileVerify) {
+        m_verifyResultFile.clear();
+        setFakeCheckRunning(false);
+        ui->fakeCheckSummary->setText(
+            QStringLiteral("检查失败：%1").arg(reason));
+        ui->fakeCheckSummary->setProperty("state", QStringLiteral("fail"));
+        ui->fakeCheckSummary->style()->unpolish(ui->fakeCheckSummary);
+        ui->fakeCheckSummary->style()->polish(ui->fakeCheckSummary);
     }
 
     appendLog("-------------------");
@@ -7301,6 +7380,54 @@ void MainWindow::setupTools()
         }
         runFileLock(path);
     });
+
+    // 查伪装软件
+    connect(ui->btn_fakeCheck, &QAbstractButton::clicked, this, [this]() {
+        while (QLayoutItem *item = ui->fakeCheckRowsLayout->takeAt(0)) {
+            if (QWidget *widget = item->widget())
+                widget->deleteLater();
+            delete item;
+        }
+        ui->fakeCheckSummary->setText(
+            QStringLiteral("检查单个文件，或扫描桌面、下载、启动文件夹里的可执行文件"));
+        ui->fakeCheckSummary->setProperty("state", QString());
+        ui->fakeCheckSummary->style()->unpolish(ui->fakeCheckSummary);
+        ui->fakeCheckSummary->style()->polish(ui->fakeCheckSummary);
+        m_verifyPath.clear();
+        m_verifyHash.clear();
+        ui->fakeCheckHash->setText(QStringLiteral("SHA-256：—"));
+        ui->fakeCheckExpected->clear();
+        setFakeCheckRunning(false);
+        ui->fakeCheckCompare->setText(
+            QStringLiteral("哈希用于核对文件是否与官网发布的一致，全程不会上传文件。"));
+        ui->fakeCheckCompare->setProperty("state", QString());
+        ui->fakeCheckCompare->style()->unpolish(ui->fakeCheckCompare);
+        ui->fakeCheckCompare->style()->polish(ui->fakeCheckCompare);
+        ui->cardFakeCheck->setVisible(true);
+        QTimer::singleShot(0, this, [this] {
+            ui->pageTools->ensureWidgetVisible(ui->cardFakeCheck);
+        });
+    });
+
+    connect(ui->fakeCheckPickBtn, &QPushButton::clicked, this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(
+            this, QStringLiteral("选择要检查的文件"), QString(),
+            QStringLiteral("所有文件 (*.*)"));
+        if (!path.isEmpty())
+            runFakeCheck(path);
+    });
+
+    connect(ui->fakeCheckScanBtn, &QPushButton::clicked, this, [this]() {
+        runFakeCheck(QString());
+    });
+
+    connect(ui->fakeCheckCopyBtn, &QPushButton::clicked,
+            this, &MainWindow::copyFakeCheckHash);
+
+    connect(ui->fakeCheckExpected, &QLineEdit::textChanged,
+            this, &MainWindow::updateFakeCheckCompare);
+
+    setFakeCheckRunning(false);
 }
 
 // ---------------------------------------------------------------- 右键菜单管理
@@ -7922,6 +8049,382 @@ void MainWindow::addFileLockRow(const QString &badge, const QString &name,
     ui->fileLockRowsLayout->insertWidget(insertAt, row);
 }
 
+// ---------------------------------------------------------------- 查伪装软件
+
+void MainWindow::runFakeCheck(const QString &path)
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/fakecheck.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少伪装检查脚本",
+                    "未找到 ps1\\fakecheck.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    if (!path.isEmpty() && !QFileInfo::exists(path)) {
+        ui->fakeCheckSummary->setText(QStringLiteral("文件不存在，请重新选择"));
+        showMessage("文件不存在",
+                    "找不到这个文件，可能已被移动或删除。\n\n" + path,
+                    QMessageBox::Warning);
+        return;
+    }
+
+    if (!claimTask(path.isEmpty() ? QStringLiteral("扫描伪装软件")
+                                  : QStringLiteral("检查文件是否被伪装")))
+        return;
+
+    ++m_flow;
+
+    m_verifyPath = path;
+    m_verifyHash.clear();
+
+    while (QLayoutItem *item = ui->fakeCheckRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+
+    ui->fakeCheckHash->setText(QStringLiteral("SHA-256：—"));
+    ui->fakeCheckSummary->setProperty("state", QString());
+    ui->fakeCheckSummary->style()->unpolish(ui->fakeCheckSummary);
+    ui->fakeCheckSummary->style()->polish(ui->fakeCheckSummary);
+
+    setFakeCheckRunning(true);
+    updateFakeCheckCompare();
+
+    ui->fakeCheckSummary->setText(
+        path.isEmpty() ? QStringLiteral("正在扫描桌面、下载与启动文件夹……")
+                       : QStringLiteral("正在检查 %1……").arg(QFileInfo(path).fileName()));
+    ui->cardFakeCheck->setVisible(true);
+    QTimer::singleShot(0, this, [this] {
+        ui->pageTools->ensureWidgetVisible(ui->cardFakeCheck);
+    });
+
+    if (path.isEmpty()) {
+        appendLog("-------------------");
+        appendLog("开始扫描常见位置的伪装软件。");
+    } else {
+        appendLog("-------------------");
+        appendLog(QStringLiteral("正在检查：%1").arg(path));
+    }
+
+    m_verifyResultFile =
+        QDir::tempPath() + QStringLiteral("/wt-fakecheck-")
+        + QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".json");
+
+    QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), path.isEmpty() ? QStringLiteral("scan")
+                                                 : QStringLiteral("file"),
+        QStringLiteral("-Result"), m_verifyResultFile
+    };
+    if (!path.isEmpty())
+        args << QStringLiteral("-Path") << path;
+
+    m_task = Task::FileVerify;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleFakeCheck()
+{
+    setFakeCheckRunning(false);
+
+    const QString resultPath = m_verifyResultFile;
+    m_verifyResultFile.clear();
+
+    QString payload;
+    if (!resultPath.isEmpty()) {
+        QFile file(resultPath);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+            payload = QString::fromUtf8(file.readAll());
+        file.remove();
+    }
+
+    if (payload.trimmed().isEmpty()) {
+        const QString output = m_runner->collectedOutput();
+        const QString marker = QStringLiteral("FAKECHECK_JSON:");
+        const int markerPos = output.indexOf(marker);
+        if (markerPos >= 0) {
+            payload = output.mid(markerPos + marker.size())
+                          .section(QLatin1Char('\n'), 0, 0)
+                          .trimmed();
+        }
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.trimmed().isEmpty() || !document.isObject()) {
+        ui->fakeCheckSummary->setProperty("state", QStringLiteral("fail"));
+        ui->fakeCheckSummary->style()->unpolish(ui->fakeCheckSummary);
+        ui->fakeCheckSummary->style()->polish(ui->fakeCheckSummary);
+        ui->fakeCheckSummary->setText(QStringLiteral("检查失败"));
+        appendLog("检查失败：未能解析脚本输出。");
+        showMessage("检查失败",
+                    "未能从 PowerShell 获取检查结果，请稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject object = document.object();
+    if (!object.value(QStringLiteral("ok")).toBool()) {
+        const QString code = object.value(QStringLiteral("code")).toString();
+        QString reason;
+        if (code == QLatin1String("no-path"))
+            reason = QStringLiteral("没有指定要检查的文件");
+        else if (code == QLatin1String("not-found"))
+            reason = QStringLiteral("文件不存在，可能已被移动或删除");
+        else if (code == QLatin1String("read-failed"))
+            reason = QStringLiteral("无法读取文件，可能被占用或没有访问权限");
+        else
+            reason = QStringLiteral("检查失败（%1）").arg(code);
+
+        ui->fakeCheckSummary->setProperty("state", QStringLiteral("fail"));
+        ui->fakeCheckSummary->style()->unpolish(ui->fakeCheckSummary);
+        ui->fakeCheckSummary->style()->polish(ui->fakeCheckSummary);
+        ui->fakeCheckSummary->setText(reason);
+        appendLog(reason);
+        showMessage("检查失败", reason, QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonArray files = object.value(QStringLiteral("files")).toArray();
+    const QString mode = object.value(QStringLiteral("mode")).toString();
+
+    renderFakeCheck(files);
+
+    int normal = 0;
+    int suspicious = 0;
+    int high = 0;
+    for (const QJsonValue &value : files) {
+        const QString risk = value.toObject().value(QStringLiteral("risk")).toString();
+        if (risk == QLatin1String("high"))
+            ++high;
+        else if (risk == QLatin1String("suspicious"))
+            ++suspicious;
+        else
+            ++normal;
+    }
+
+    QString summary;
+    QString state = QStringLiteral("ok");
+    if (files.isEmpty()) {
+        summary = mode == QLatin1String("scan")
+                      ? QStringLiteral("桌面、下载与启动文件夹里没有可检查的可执行文件")
+                      : QStringLiteral("没有可检查的文件");
+    } else if (mode == QLatin1String("scan")) {
+        summary = QStringLiteral("扫描了 %1 个可执行文件：正常 %2 · 可疑 %3 · 高风险 %4")
+                      .arg(files.size()).arg(normal).arg(suspicious).arg(high);
+    } else {
+        const QJsonObject first = files.first().toObject();
+        summary = QStringLiteral("%1：%2")
+                      .arg(first.value(QStringLiteral("name")).toString(),
+                           fakeCheckRiskLabel(first.value(QStringLiteral("risk")).toString()));
+    }
+
+    if (high > 0)
+        state = QStringLiteral("fail");
+    else if (suspicious > 0)
+        state = QStringLiteral("warn");
+
+    ui->fakeCheckSummary->setProperty("state", state);
+    ui->fakeCheckSummary->style()->unpolish(ui->fakeCheckSummary);
+    ui->fakeCheckSummary->style()->polish(ui->fakeCheckSummary);
+    ui->fakeCheckSummary->setText(summary);
+    ui->fakeCheckScroll->verticalScrollBar()->setValue(0);
+
+    m_verifyHash.clear();
+    if (files.size() == 1) {
+        const QJsonObject first = files.first().toObject();
+        m_verifyHash = first.value(QStringLiteral("hash")).toString();
+        if (!m_verifyHash.isEmpty())
+            ui->fakeCheckHash->setText(QStringLiteral("SHA-256：%1").arg(m_verifyHash));
+        else
+            ui->fakeCheckHash->setText(QStringLiteral("SHA-256：—"));
+    } else {
+        ui->fakeCheckHash->setText(QStringLiteral("SHA-256：—"));
+    }
+    m_verifyPath = files.size() == 1
+                       ? files.first().toObject().value(QStringLiteral("path")).toString()
+                       : QString();
+    setFakeCheckRunning(false);
+    updateFakeCheckCompare();
+
+    appendLog("-------------------");
+    appendLog(summary);
+    for (const QJsonValue &value : files) {
+        const QJsonObject file = value.toObject();
+        const QString risk = file.value(QStringLiteral("risk")).toString();
+        if (risk == QLatin1String("high") || risk == QLatin1String("suspicious")) {
+            const QJsonArray reasons = file.value(QStringLiteral("reasons")).toArray();
+            QStringList labels;
+            for (const QJsonValue &reason : reasons)
+                labels << fakeCheckReasonLabel(reason.toString());
+            appendLog(QStringLiteral("%1：%2（%3）")
+                          .arg(fakeCheckRiskLabel(risk),
+                               file.value(QStringLiteral("path")).toString(),
+                               labels.join(QStringLiteral("；"))));
+        }
+    }
+}
+
+void MainWindow::renderFakeCheck(const QJsonArray &files)
+{
+    if (files.isEmpty()) {
+        QLabel *empty = new QLabel(
+            QStringLiteral("没有找到可检查的文件。"), ui->fakeCheckRows);
+        empty->setObjectName(QStringLiteral("verifyDetail"));
+        empty->setWordWrap(true);
+        ui->fakeCheckRowsLayout->addWidget(empty);
+        return;
+    }
+
+    for (const QJsonValue &value : files) {
+        const QJsonObject file = value.toObject();
+        const QJsonArray reasons = file.value(QStringLiteral("reasons")).toArray();
+        QStringList labels;
+        for (const QJsonValue &reason : reasons)
+            labels << fakeCheckReasonLabel(reason.toString());
+
+        QString detail;
+        if (!labels.isEmpty()) {
+            detail = labels.join(QStringLiteral("；"));
+        } else if (file.value(QStringLiteral("sigStatus")).toString()
+                       == QLatin1String("Valid")) {
+            detail = QStringLiteral("数字签名有效，未发现明显伪装特征");
+        } else {
+            detail = QStringLiteral("未发现明显伪装特征");
+        }
+
+        const QString signer = file.value(QStringLiteral("signer")).toString();
+        if (!signer.isEmpty())
+            detail += QStringLiteral(" · 签名者：%1").arg(signer);
+
+        addFakeCheckRow(file.value(QStringLiteral("risk")).toString(),
+                        file.value(QStringLiteral("name")).toString(),
+                        file.value(QStringLiteral("path")).toString(),
+                        detail,
+                        file.value(QStringLiteral("hash")).toString());
+    }
+}
+
+void MainWindow::addFakeCheckRow(const QString &risk, const QString &name,
+                                 const QString &path, const QString &detail,
+                                 const QString &hash)
+{
+    QWidget *row = new QWidget(ui->fakeCheckRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badge = new QLabel(fakeCheckRiskLabel(risk), row);
+    badge->setObjectName(QStringLiteral("verifyBadge"));
+    badge->setProperty("state", fakeCheckRiskState(risk));
+    badge->setAlignment(Qt::AlignCenter);
+    badge->setFixedWidth(64);
+
+    QLabel *title = new QLabel(name, row);
+    title->setObjectName(QStringLiteral("verifyName"));
+    title->setWordWrap(true);
+
+    QLabel *pathLabel = new QLabel(path, row);
+    pathLabel->setObjectName(QStringLiteral("verifyDetail"));
+    pathLabel->setWordWrap(true);
+    pathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    QLabel *detailLabel = new QLabel(detail, row);
+    detailLabel->setObjectName(QStringLiteral("verifyDetail"));
+    detailLabel->setWordWrap(true);
+    detailLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(title);
+    text->addWidget(pathLabel);
+    text->addWidget(detailLabel);
+
+    if (!hash.isEmpty()) {
+        QLabel *hashLabel = new QLabel(
+            QStringLiteral("SHA-256：%1").arg(hash), row);
+        hashLabel->setObjectName(QStringLiteral("verifyHashValue"));
+        hashLabel->setWordWrap(true);
+        hashLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        text->addWidget(hashLabel);
+    }
+
+    layout->addWidget(badge, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->fakeCheckRowsLayout->addWidget(row);
+}
+
+void MainWindow::setFakeCheckRunning(bool running)
+{
+    ui->fakeCheckPickBtn->setEnabled(!running);
+    ui->fakeCheckScanBtn->setEnabled(!running);
+    ui->fakeCheckCopyBtn->setEnabled(!running && !m_verifyHash.isEmpty());
+    ui->fakeCheckExpected->setEnabled(!running && !m_verifyPath.isEmpty());
+}
+
+void MainWindow::updateFakeCheckCompare()
+{
+    auto setState = [this](const QString &state) {
+        ui->fakeCheckCompare->setProperty("state", state);
+        ui->fakeCheckCompare->style()->unpolish(ui->fakeCheckCompare);
+        ui->fakeCheckCompare->style()->polish(ui->fakeCheckCompare);
+    };
+
+    const QString expected = normalizeHashText(ui->fakeCheckExpected->text());
+    if (expected.isEmpty()) {
+        setState(QString());
+        ui->fakeCheckCompare->setText(
+            QStringLiteral("哈希用于核对文件是否与官网发布的一致，全程不会上传文件。"));
+        return;
+    }
+
+    if (m_verifyHash.isEmpty()) {
+        setState(QStringLiteral("warn"));
+        ui->fakeCheckCompare->setText(
+            QStringLiteral("请先检查单个文件，再粘贴哈希进行比对。"));
+        return;
+    }
+
+    if (expected.size() != m_verifyHash.size()) {
+        setState(QStringLiteral("fail"));
+        ui->fakeCheckCompare->setText(
+            QStringLiteral("粘贴的哈希为 %1 位，与当前 SHA-256（%2 位）不一致，"
+                           "请确认复制的是 SHA-256 值。")
+                .arg(expected.size())
+                .arg(m_verifyHash.size()));
+        return;
+    }
+
+    if (expected == m_verifyHash) {
+        setState(QStringLiteral("ok"));
+        ui->fakeCheckCompare->setText(
+            QStringLiteral("一致：文件内容与官网公布的值相同，未被替换。"));
+    } else {
+        setState(QStringLiteral("fail"));
+        ui->fakeCheckCompare->setText(
+            QStringLiteral("不一致：文件可能下载不完整或已被篡改，请不要运行，"
+                           "建议重新下载。"));
+    }
+}
+
+void MainWindow::copyFakeCheckHash()
+{
+    if (m_verifyHash.isEmpty())
+        return;
+
+    QGuiApplication::clipboard()->setText(m_verifyHash);
+    appendLog(QStringLiteral("已复制 SHA-256：%1").arg(m_verifyHash));
+}
+
 // ---------------------------------------------------------------- 任务并发控制
 
 QString MainWindow::currentTaskLabel() const
@@ -7965,6 +8468,7 @@ QString MainWindow::currentTaskLabel() const
     case Task::ContextMenuToggle: return QStringLiteral("修改右键菜单项");
     case Task::BootTime:        return QStringLiteral("分析开机耗时");
     case Task::FileLock:        return QStringLiteral("查找文件占用");
+    case Task::FileVerify:      return QStringLiteral("检查文件是否被伪装");
     default:                    return QStringLiteral("当前任务");
     }
 }
@@ -8042,6 +8546,15 @@ void MainWindow::abortForegroundTask()
     ui->restoreCreateBtn->setEnabled(true);
     ui->btnWUpdateFix->setEnabled(true);
 
+    if (m_task == Task::FileVerify) {
+        m_verifyResultFile.clear();
+        setFakeCheckRunning(false);
+        ui->fakeCheckSummary->setText(QStringLiteral("检查已终止"));
+        ui->fakeCheckSummary->setProperty("state", QString());
+        ui->fakeCheckSummary->style()->unpolish(ui->fakeCheckSummary);
+        ui->fakeCheckSummary->style()->polish(ui->fakeCheckSummary);
+    }
+
     m_task = Task::None;
     appendLog(QStringLiteral("已终止上一个任务。"));
 }
@@ -8081,6 +8594,12 @@ void MainWindow::moveForegroundToBackground()
     m_restoreBusy = false;
     ui->restoreCreateBtn->setEnabled(true);
     ui->btnWUpdateFix->setEnabled(true);
+
+    if (type == Task::FileVerify) {
+        m_verifyResultFile.clear();
+        setFakeCheckRunning(false);
+        ui->fakeCheckSummary->setText(QStringLiteral("检查已转到后台，结果不会显示在这里"));
+    }
 
     m_task = Task::None;
 
@@ -8159,6 +8678,7 @@ bool MainWindow::backgroundResultViewable(Task task) const
     case Task::HostsRead:
     case Task::DnsRead:
     case Task::FileLock:
+    case Task::FileVerify:
     case Task::BootTime:
     case Task::ContextMenuList:
     case Task::Treemap:
@@ -8208,6 +8728,7 @@ int MainWindow::pageForTask(Task task) const
     case Task::DuplicateScan:
     case Task::DiskUsage:
     case Task::FileLock:
+    case Task::FileVerify:
     case Task::BootTime:
     case Task::ContextMenuList:
     case Task::Treemap:

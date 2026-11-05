@@ -1,10 +1,8 @@
-﻿/*
- * Copyright (c) 2023 素曜
- * SPDX-License-Identifier: MIT
- *
- * This file is part of WindowsTool and is distributed under the MIT License.
- * See the LICENSE file in the project root for the full license text.
- */
+﻿# Copyright (c) 2023 素曜
+# SPDX-License-Identifier: MIT
+#
+# This file is part of WindowsTool and is distributed under the MIT License.
+# See the LICENSE file in the project root for the full license text.
 
 # Network repair: reset DNS on the physical adapter that carries the default
 # route, back up the previous configuration first, and report a machine

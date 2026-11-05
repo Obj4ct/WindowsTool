@@ -847,6 +847,45 @@ def test_operation_page(exe, shot_dir):
                 proc.kill()
 
 
+def test_fake_check(exe, shot_dir):
+    """测试7：伪装检查卡片可打开，入口与结果区控件齐全"""
+    print("\n[测试7] 查伪装软件卡片")
+    proc = subprocess.Popen([exe], cwd=os.path.dirname(exe))
+    try:
+        hwnd = find_app_window(proc)
+        if not hwnd:
+            check("启动并显示主窗口", False, "未找到窗口")
+            return
+        time.sleep(2)
+
+        switched, detail = uia_click(proc.pid, "navToolsBtn")
+        check("切到实用工具页", switched, detail)
+        time.sleep(0.5)
+
+        opened, detail = uia_click(proc.pid, "btn_fakeCheck")
+        check("打开伪装检查卡片", opened, detail)
+        time.sleep(0.8)
+
+        check("伪装检查卡片存在", uia_exists(proc.pid, "cardFakeCheck"))
+        check("检查文件按钮存在", uia_exists(proc.pid, "fakeCheckPickBtn"))
+        check("扫描常见位置按钮存在", uia_exists(proc.pid, "fakeCheckScanBtn"))
+        check("哈希比对输入框存在", uia_exists(proc.pid, "fakeCheckExpected"))
+        check("复制哈希按钮存在", uia_exists(proc.pid, "fakeCheckCopyBtn"))
+
+        shot = os.path.join(shot_dir, "uitest_fakecheck.png")
+        if capture(hwnd, shot):
+            check("保存伪装检查截图", True, shot)
+
+        check("进程未崩溃", proc.poll() is None, f"exit={proc.poll()}")
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+
+
 def main():
     if len(sys.argv) < 2:
         print("用法: python uitest.py <exe路径>")
@@ -867,6 +906,7 @@ def main():
     test_task_concurrency(exe, shot_dir)
     test_background_result(exe, shot_dir)
     test_operation_page(exe, shot_dir)
+    test_fake_check(exe, shot_dir)
 
     print(f"\n===== 结果: {passed} passed, {failed} failed =====")
     return 0 if failed == 0 else 1

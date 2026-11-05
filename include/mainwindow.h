@@ -9,6 +9,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMainWindow>
 #include <QList>
@@ -78,6 +79,7 @@ private:
         DnsRead,         ///< 读取当前网卡 DNS（dns.ps1 -Action read）
         DnsWrite,        ///< 切换 DNS（dns.ps1 -Action apply）
         FileLock,        ///< 查询文件被哪个进程占用（filelock.ps1）
+        FileVerify,      ///< 检查文件是否被伪装（fakecheck.ps1）
         BootTime,        ///< 开机耗时分析（boottime.ps1）
         ContextMenuList, ///< 右键菜单项枚举（contextmenu.ps1 list）
         ContextMenuToggle, ///< 禁用/启用右键菜单项（contextmenu.ps1 disable/enable）
@@ -285,6 +287,17 @@ private:
     void addFileLockRow(const QString &badge, const QString &name,
                         const QString &detail);
 
+    // 查伪装软件（只读）
+    void runFakeCheck(const QString &path);
+    void handleFakeCheck();
+    void renderFakeCheck(const QJsonArray &files);
+    void setFakeCheckRunning(bool running);
+    void updateFakeCheckCompare();
+    void copyFakeCheckHash();
+    void addFakeCheckRow(const QString &risk, const QString &name,
+                         const QString &path, const QString &detail,
+                         const QString &hash);
+
     // 操作记录（本地追加留痕；可逆操作提供撤销）
     struct OperationRecord {
         QString id;
@@ -389,6 +402,11 @@ private:
     /** 目录空间树图：当前扫描的根目录与绘图控件 */
     QString m_treemapRoot;
     TreemapWidget *m_treemap = nullptr;
+
+    /** 伪装检查：最近一次单文件结果，用于哈希比对与复制 */
+    QString m_verifyPath;
+    QString m_verifyHash;
+    QString m_verifyResultFile;
 
     /** 更新组件清理：脚本日志路径 */
     QString m_sxsLogPath;
