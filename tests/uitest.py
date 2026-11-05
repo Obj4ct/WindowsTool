@@ -313,6 +313,8 @@ def test_log_output(exe, shot_dir):
         check("分层诊断卡片存在", uia_exists(proc.pid, "cardNetDiag"))
         check("诊断汇总行存在", uia_exists(proc.pid, "netDiagSummary"))
         check("诊断滚动区存在", uia_exists(proc.pid, "netDiagScroll"))
+        check("诊断报告导出按钮存在",
+              uia_exists(proc.pid, "btn_exportDiagReport"))
         check("诊断结果已逐层渲染",
               uia_exists_name_contains(proc.pid, "域名解析"),
               "未找到 DNS 解析这一行")

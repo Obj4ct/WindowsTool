@@ -97,6 +97,7 @@ class NetDiagTest : public QObject
 private slots:
     void buildQuery_hasHeaderAndQuestion();
     void parseResponse_aRecord();
+    void parseResponse_highOctets();
     void parseResponse_nxdomain();
     void parseResponse_servfail();
     void parseResponse_idMismatch();
@@ -170,6 +171,17 @@ void NetDiagTest::parseResponse_aRecord()
     QCOMPARE(result.rcode, 0);
     QCOMPARE(result.status, DnsProbe::Status::Ok);
     QCOMPARE(result.addresses, QStringList{QStringLiteral("1.2.3.4")});
+}
+
+void NetDiagTest::parseResponse_highOctets()
+{
+    DnsProbe::Result result;
+    QString error;
+    QVERIFY(DnsProbe::parseResponse(
+        makeResponse(0x1234, 0, QStringLiteral("220.181.38.168")),
+        0x1234, &result, &error));
+    QCOMPARE(result.status, DnsProbe::Status::Ok);
+    QCOMPARE(result.addresses, QStringList{QStringLiteral("220.181.38.168")});
 }
 
 void NetDiagTest::parseResponse_nxdomain()

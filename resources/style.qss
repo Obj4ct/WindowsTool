@@ -758,8 +758,8 @@
     color: #B6BFCC;
 }
 
-/* 体检报告导出按钮 */
-#btn_exportHealth {
+/* 体检 / 诊断报告导出按钮 */
+#btn_exportHealth, #btn_exportDiagReport {
     background: #FFFFFF;
     border: 1px solid #E1E7F0;
     border-radius: 9px;
@@ -767,12 +767,12 @@
     font-size: 13px;
     padding: 0 16px;
 }
-#btn_exportHealth:hover {
+#btn_exportHealth:hover, #btn_exportDiagReport:hover {
     background: #F5F8FE;
     border-color: #B9CDF0;
     color: #2B6CD4;
 }
-#btn_exportHealth:pressed {
+#btn_exportHealth:pressed, #btn_exportDiagReport:pressed {
     background: #EAF1FC;
 }
 

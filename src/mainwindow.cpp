@@ -1045,6 +1045,10 @@ void MainWindow::setupNetwork()
         startAutoCheck();
     });
 
+    // 导出分层诊断报告
+    connect(ui->btn_exportDiagReport, &QPushButton::clicked,
+            this, &MainWindow::exportDiagReport);
+
     // 查看网络信息
     connect(ui->btn_showNetWork, &QAbstractButton::clicked,
             this, &MainWindow::showNetworkInfo);
@@ -1384,6 +1388,7 @@ void MainWindow::startAutoCheck()
 
     clearDiagRows();
     m_diagSiteResults.clear();
+    m_hasDiagReport = false;
     ui->netDiagSummary->setText(QStringLiteral("正在读取网卡、路由与 DNS 配置……"));
     ui->netDiagSummary->setProperty("state", QString());
     ui->netDiagSummary->style()->unpolish(ui->netDiagSummary);
@@ -1669,6 +1674,11 @@ void MainWindow::completeDiagnosis(const NetProbe::Outcome &outcome)
                 "可稍后重试或关闭代理后对比。");
         }
     }
+
+    m_lastDiagResult = result;
+    m_diagGeneratedAt = QDateTime::currentDateTime().toString(
+        QStringLiteral("yyyy-MM-dd HH:mm"));
+    m_hasDiagReport = true;
 
     renderDiagResult(result);
 
@@ -2658,6 +2668,164 @@ void MainWindow::exportHealthReport()
     appendLog(QStringLiteral("体检报告已导出：%1").arg(path));
     showMessage("报告已导出",
                 QStringLiteral("体检报告已保存到：\n%1\n\n"
+                               "用浏览器打开就能查看，也可以发给别人。").arg(path));
+}
+
+void MainWindow::exportDiagReport()
+{
+    if (!m_hasDiagReport || m_lastDiagResult.items.isEmpty()) {
+        showMessage("还没有诊断结果",
+                    "请先点「一键检测修复」，等分层结果出来后就能导出报告了。",
+                    QMessageBox::Information);
+        return;
+    }
+
+    const QString defaultName = QStringLiteral("网络诊断报告_%1.html")
+                                    .arg(QDateTime::currentDateTime().toString(
+                                        QStringLiteral("yyyyMMdd_HHmm")));
+    QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("保存诊断报告"),
+        QDir(QDir::homePath()).filePath(defaultName),
+        QStringLiteral("网页文件 (*.html)"));
+    if (path.isEmpty())
+        return;
+    if (!path.endsWith(QStringLiteral(".html"), Qt::CaseInsensitive))
+        path += QStringLiteral(".html");
+
+    int failed = 0;
+    int warned = 0;
+    for (const NetDiag::CheckItem &item : m_lastDiagResult.items) {
+        if (item.status == NetDiag::Status::Fail)
+            ++failed;
+        else if (item.status == NetDiag::Status::Warn)
+            ++warned;
+    }
+
+    QString stateClass = QStringLiteral("ok");
+    QString stateText = QStringLiteral("各层检查通过");
+    if (m_lastDiagResult.hasFailure) {
+        stateClass = QStringLiteral("risk");
+        stateText = QStringLiteral("发现 %1 个问题").arg(failed);
+    } else if (warned > 0) {
+        stateClass = QStringLiteral("warn");
+        stateText = QStringLiteral("%1 项提示").arg(warned);
+    }
+
+    QString rows;
+    for (const NetDiag::CheckItem &item : m_lastDiagResult.items) {
+        QString cls;
+        QString badge;
+        switch (item.status) {
+        case NetDiag::Status::Pass:
+            cls = QStringLiteral("ok");
+            badge = QStringLiteral("通过");
+            break;
+        case NetDiag::Status::Warn:
+            cls = QStringLiteral("warn");
+            badge = QStringLiteral("建议");
+            break;
+        case NetDiag::Status::Fail:
+            cls = QStringLiteral("risk");
+            badge = QStringLiteral("未通过");
+            break;
+        case NetDiag::Status::Skip:
+            cls = QStringLiteral("skip");
+            badge = QStringLiteral("跳过");
+            break;
+        }
+
+        const QString elapsed = item.elapsedMs >= 0
+                                    ? QStringLiteral("%1 ms").arg(item.elapsedMs)
+                                    : QStringLiteral("—");
+        rows += QStringLiteral(
+                    "<tr><td><span class=\"badge %1\">%2</span></td>"
+                    "<td class=\"layer\">%3</td><td class=\"name\">%4</td>"
+                    "<td class=\"mono\">%5</td><td class=\"detail\">%6</td></tr>\n")
+                    .arg(cls, badge,
+                         escapeHtml(NetDiag::layerLabel(item.layer)),
+                         escapeHtml(item.name), elapsed,
+                         escapeHtml(item.detail));
+    }
+
+    const QString computer = qEnvironmentVariable("COMPUTERNAME");
+
+    QString html;
+    html += QStringLiteral(
+        "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n"
+        "<title>网络诊断报告</title>\n<style>\n"
+        "body{margin:0;background:#F2F5FA;color:#1E2A3B;"
+        "font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;}\n"
+        ".page{max-width:900px;margin:32px auto;padding:32px 36px;background:#FFFFFF;"
+        "border-radius:16px;box-shadow:0 8px 28px rgba(28,46,80,.10);}\n"
+        "h1{margin:0 0 6px;font-size:24px;}\n"
+        ".meta{margin:0 0 22px;color:#93A0B4;font-size:12px;}\n"
+        ".result{display:flex;align-items:center;gap:12px;padding:14px 18px;"
+        "border-radius:12px;margin-bottom:14px;}\n"
+        ".result.ok{background:#E8F7EE;}.result.warn{background:#FFF6E5;}"
+        ".result.risk{background:#FDECEC;}\n"
+        ".result-badge{background:#FFFFFF;border-radius:8px;padding:4px 10px;"
+        "font-size:12px;font-weight:600;color:#4A576F;}\n"
+        ".result.ok .result-badge{color:#1F8A4C;}"
+        ".result.warn .result-badge{color:#B7791F;}"
+        ".result.risk .result-badge{color:#C0392B;}\n"
+        ".result-text{font-size:14px;font-weight:600;}\n"
+        ".summary{font-size:13px;color:#4A576F;margin:0 0 12px;}\n"
+        ".suggestion{font-size:13px;color:#4A576F;background:#F7F9FD;"
+        "border-radius:10px;padding:12px 16px;margin:0 0 20px;}\n"
+        "table{width:100%;border-collapse:collapse;font-size:13px;}\n"
+        "th{text-align:left;padding:10px 12px;background:#F7F9FD;color:#5B6980;"
+        "font-weight:600;border-bottom:1px solid #E6ECF6;}\n"
+        "td{padding:12px;border-bottom:1px solid #EEF1F6;vertical-align:top;}\n"
+        ".badge{display:inline-block;padding:3px 8px;border-radius:8px;font-size:11px;"
+        "font-weight:600;white-space:nowrap;}\n"
+        ".badge.ok{background:#E8F7EE;color:#1F8A4C;}"
+        ".badge.warn{background:#FFF6E5;color:#B7791F;}"
+        ".badge.risk{background:#FDECEC;color:#C0392B;}"
+        ".badge.skip{background:#EEF1F6;color:#8B97A8;}\n"
+        ".layer{color:#7A879B;font-size:12px;white-space:nowrap;}\n"
+        ".name{font-weight:600;white-space:nowrap;}\n"
+        ".mono{color:#7A879B;font-size:12px;white-space:nowrap;}\n"
+        ".detail{color:#7A879B;font-size:12px;}\n"
+        ".footer{margin-top:22px;color:#A6B2C4;font-size:11px;line-height:1.7;}\n"
+        "</style>\n</head>\n<body>\n<div class=\"page\">\n"
+        "<h1>网络诊断报告</h1>\n"
+        "<p class=\"meta\">生成时间：%1　·　电脑名称：%2　·　WindowsTool 网络工具箱</p>\n"
+        "<div class=\"result %3\"><span class=\"result-badge\">%4</span>"
+        "<span class=\"result-text\">%5</span></div>\n"
+        "<p class=\"summary\">%6</p>\n")
+            .arg(m_diagGeneratedAt, escapeHtml(computer), stateClass, stateText,
+                 escapeHtml(m_lastDiagResult.summary));
+
+    if (!m_lastDiagResult.suggestion.isEmpty()) {
+        html += QStringLiteral("<p class=\"suggestion\">建议：%1</p>\n")
+                    .arg(escapeHtml(m_lastDiagResult.suggestion));
+    }
+
+    html += QStringLiteral(
+        "<table>\n<thead><tr><th style=\"width:64px\">结果</th>"
+        "<th style=\"width:76px\">层级</th><th style=\"width:110px\">检查项</th>"
+        "<th style=\"width:70px\">耗时</th><th>说明</th></tr></thead>\n<tbody>\n");
+    html += rows;
+    html += QStringLiteral(
+        "</tbody>\n</table>\n"
+        "<p class=\"footer\">本报告由 WindowsTool 的只读网络诊断生成，"
+        "仅反映检测时刻的网络状态；重新检测后旧结论可能不再适用。</p>\n"
+        "</div>\n</body>\n</html>\n");
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        showMessage("报告保存失败",
+                    QStringLiteral("无法写入文件：%1\n\n请换一个保存位置再试。").arg(path),
+                    QMessageBox::Warning);
+        return;
+    }
+    file.write(html.toUtf8());
+    file.close();
+
+    appendLog("-------------------");
+    appendLog(QStringLiteral("诊断报告已导出：%1").arg(path));
+    showMessage("报告已导出",
+                QStringLiteral("网络诊断报告已保存到：\n%1\n\n"
                                "用浏览器打开就能查看，也可以发给别人。").arg(path));
 }
 

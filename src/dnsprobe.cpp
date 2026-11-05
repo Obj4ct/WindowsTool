@@ -173,11 +173,13 @@ bool parseResponse(const QByteArray &packet, quint16 expectedId,
             return fail(QStringLiteral("答案数据越界"));
 
         if (type == TypeA && klass == ClassIn && rdLength == 4) {
+            // QByteArray::at 返回 char，必须转成无符号再转 int，
+            // 否则 128~255 的地址段会变成负数（如 36.-104.44.93）
             result->addresses.append(QStringLiteral("%1.%2.%3.%4")
-                .arg(static_cast<int>(packet.at(offset)))
-                .arg(static_cast<int>(packet.at(offset + 1)))
-                .arg(static_cast<int>(packet.at(offset + 2)))
-                .arg(static_cast<int>(packet.at(offset + 3))));
+                .arg(static_cast<int>(static_cast<quint8>(packet.at(offset))))
+                .arg(static_cast<int>(static_cast<quint8>(packet.at(offset + 1))))
+                .arg(static_cast<int>(static_cast<quint8>(packet.at(offset + 2))))
+                .arg(static_cast<int>(static_cast<quint8>(packet.at(offset + 3)))));
         }
         offset += rdLength;
     }

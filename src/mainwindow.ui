@@ -994,6 +994,39 @@
                    </property>
                   </widget>
                  </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="netDiagActionRow">
+                   <property name="spacing">
+                    <number>8</number>
+                   </property>
+                   <item>
+                    <spacer name="netDiagActionSpacer">
+                     <property name="orientation">
+                      <enum>Qt::Horizontal</enum>
+                     </property>
+                     <property name="sizeHint" stdset="0">
+                      <size>
+                       <width>40</width>
+                       <height>20</height>
+                      </size>
+                     </property>
+                    </spacer>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="btn_exportDiagReport">
+                     <property name="minimumSize">
+                      <size>
+                       <width>0</width>
+                       <height>32</height>
+                      </size>
+                     </property>
+                     <property name="text">
+                      <string>导出诊断报告</string>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </item>
                 </layout>
                </widget>
               </item>

@@ -124,6 +124,8 @@ private:
     void handleTargetProbeFinished(const QVector<NetProbe::SiteResult> &results);
     void completeDiagnosis(const NetProbe::Outcome &outcome);
     void renderDiagResult(const NetDiag::DiagResult &result);
+    /** 把最近一次分层诊断结果导出为 HTML 报告 */
+    void exportDiagReport();
     void clearDiagRows();
     void addDiagRow(const NetDiag::CheckItem &item);
 
@@ -486,6 +488,11 @@ private:
 
     /** 一轮检测是否已自动修复过 DNS，防止修复与复检之间来回重试 */
     bool m_autoFixAttempted = false;
+
+    /** 最近一次诊断结果：导出 HTML 报告时按分层检查项还原 */
+    NetDiag::DiagResult m_lastDiagResult;
+    QString m_diagGeneratedAt;
+    bool m_hasDiagReport = false;
 };
 
 #endif // MAINWINDOW_H
