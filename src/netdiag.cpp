@@ -75,6 +75,7 @@ QString layerLabel(Layer layer)
     case Layer::Http:  return QStringLiteral("HTTPS 请求");
     case Layer::Proxy: return QStringLiteral("系统代理");
     case Layer::App:   return QStringLiteral("浏览器访问");
+    case Layer::Targets: return QStringLiteral("目标站点");
     }
     return QStringLiteral("未知层");
 }
@@ -471,6 +472,56 @@ CheckItem evaluateHttp(const NetProbe::HttpResult &probe)
     return item;
 }
 
+CheckItem evaluateSites(const QVector<NetProbe::SiteResult> &sites)
+{
+    CheckItem item;
+    item.layer = Layer::Targets;
+    item.name = QStringLiteral("目标连通性");
+
+    if (sites.isEmpty()) {
+        item.status = Status::Skip;
+        item.detail = QStringLiteral("未执行多目标检测");
+        return item;
+    }
+
+    QStringList okLabels;
+    QStringList failed;
+    int bestMs = -1;
+    for (const NetProbe::SiteResult &site : sites) {
+        if (site.ok) {
+            okLabels.append(site.label);
+            if (site.elapsedMs >= 0 && (bestMs < 0 || site.elapsedMs < bestMs))
+                bestMs = site.elapsedMs;
+            continue;
+        }
+        const QString reason = site.resolved ? QStringLiteral("连接失败")
+                                             : QStringLiteral("解析失败");
+        failed.append(QStringLiteral("%1（%2）").arg(site.label, reason));
+    }
+
+    if (okLabels.isEmpty()) {
+        item.status = Status::Fail;
+        item.detail = QStringLiteral("%1 均无法访问，可能是全局网络或代理异常")
+                          .arg(failed.join(QStringLiteral("、")));
+        return item;
+    }
+
+    if (!failed.isEmpty()) {
+        item.status = Status::Warn;
+        item.detail = QStringLiteral("%1 可访问；%2 无法访问，"
+                                     "可能是个别站点故障或运营商拦截")
+                          .arg(okLabels.join(QStringLiteral("、")),
+                               failed.join(QStringLiteral("、")));
+        return item;
+    }
+
+    item.status = Status::Pass;
+    item.elapsedMs = bestMs;
+    item.detail = QStringLiteral("%1 均可访问")
+                      .arg(okLabels.join(QStringLiteral("、")));
+    return item;
+}
+
 DiagResult diagnose(const Snapshot &snapshot,
                     const QVector<DnsProbe::Result> &dnsResults,
                     const NetProbe::Outcome &probe)
@@ -549,6 +600,10 @@ DiagResult diagnose(const Snapshot &snapshot,
     case Layer::Http:
         result.suggestion = QStringLiteral("HTTPS 请求失败但端口可达：多为 TLS 被拦截、证书异常或代理故障；"
                                             "检查代理软件与系统时间。");
+        break;
+    case Layer::Targets:
+        result.suggestion = QStringLiteral("目标站点均无法访问：检查系统代理、防火墙或运营商网络，"
+                                            "稍后重试。");
         break;
     default:
         result.suggestion = QStringLiteral("按诊断结论逐层排查。");

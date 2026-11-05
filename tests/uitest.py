@@ -316,6 +316,9 @@ def test_log_output(exe, shot_dir):
         check("诊断结果已逐层渲染",
               uia_exists_name_contains(proc.pid, "域名解析"),
               "未找到 DNS 解析这一行")
+        check("目标连通性行存在",
+              uia_exists_name_contains(proc.pid, "目标连通性"),
+              "未找到多目标检测这一行")
 
         shot = os.path.join(shot_dir, "uitest_ping.png")
         if capture(hwnd, shot):

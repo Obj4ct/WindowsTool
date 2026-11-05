@@ -1141,6 +1141,11 @@ void MainWindow::setupNetwork()
     m_deepProbe = new NetProbe::Runner(this);
     connect(m_deepProbe, &NetProbe::Runner::finished,
             this, &MainWindow::handleDeepProbeFinished);
+
+    // 多目标站点连通性：百度 / 腾讯 / 微软，独立于主探测流程
+    m_targetRunner = new NetProbe::TargetRunner(this);
+    connect(m_targetRunner, &NetProbe::TargetRunner::finished,
+            this, &MainWindow::handleTargetProbeFinished);
 }
 
 /**
@@ -1378,6 +1383,7 @@ void MainWindow::startAutoCheck()
     appendLog("正在分层诊断网络，稍等片刻……");
 
     clearDiagRows();
+    m_diagSiteResults.clear();
     ui->netDiagSummary->setText(QStringLiteral("正在读取网卡、路由与 DNS 配置……"));
     ui->netDiagSummary->setProperty("state", QString());
     ui->netDiagSummary->style()->unpolish(ui->netDiagSummary);
@@ -1582,7 +1588,54 @@ void MainWindow::handleDeepProbeFinished(const NetProbe::Outcome &outcome)
     if (wasProbing && m_diagFlow != m_flow)
         return;
 
-    completeDiagnosis(outcome);
+    m_diagOutcome = outcome;
+    startTargetProbe();
+}
+
+/**
+ * 主探测结束后并发检查常用站点：先解析域名，再连接 443。
+ * 结论用于区分「全局断网」和「单站点故障」，不阻塞其它流程。
+ */
+void MainWindow::startTargetProbe()
+{
+    QStringList servers;
+    for (const DnsProbe::Result &result : m_diagDnsResults) {
+        if (result.status == DnsProbe::Status::Ok && !servers.contains(result.server))
+            servers.append(result.server);
+    }
+
+    const QVector<NetProbe::SiteTarget> targets = {
+        {QStringLiteral("百度"), QStringLiteral("www.baidu.com"), 443},
+        {QStringLiteral("腾讯"), QStringLiteral("www.qq.com"), 443},
+        {QStringLiteral("微软"), QStringLiteral("www.microsoft.com"), 443}
+    };
+
+    // 主 DNS 都没解析成功时，目标检测没有意义，直接给出分层结论
+    if (!m_targetRunner || servers.isEmpty()) {
+        completeDiagnosis(m_diagOutcome);
+        return;
+    }
+
+    appendLog("正在检测常用目标站点（百度 / 腾讯 / 微软）……");
+    ui->netDiagSummary->setText(QStringLiteral("正在检测常用目标站点……"));
+
+    m_diagProbing = true;
+    m_diagFlow = m_flow;
+    m_targetRunner->start(targets, servers, 1200);
+}
+
+/** 多目标检测结束：把结果并入分层结论 */
+void MainWindow::handleTargetProbeFinished(
+    const QVector<NetProbe::SiteResult> &results)
+{
+    const bool wasProbing = m_diagProbing;
+    m_diagProbing = false;
+
+    if (wasProbing && m_diagFlow != m_flow)
+        return;
+
+    m_diagSiteResults = results;
+    completeDiagnosis(m_diagOutcome);
 }
 
 /** 用完整的探测结果生成结论、渲染面板，并按首个失败层决定后续动作 */
@@ -1592,8 +1645,31 @@ void MainWindow::completeDiagnosis(const NetProbe::Outcome &outcome)
     NetProbe::Outcome merged = outcome;
     merged.https = m_diagSnapshot.https;
 
-    const NetDiag::DiagResult result =
+    NetDiag::DiagResult result =
         NetDiag::diagnose(m_diagSnapshot, m_diagDnsResults, merged);
+
+    // 多目标检测只作为补充结论：全部失败才升级为失败，部分失败仅提示
+    NetDiag::CheckItem siteItem;
+    bool hasSiteItem = false;
+    if (!m_diagSiteResults.isEmpty()) {
+        siteItem = NetDiag::evaluateSites(m_diagSiteResults);
+        hasSiteItem = true;
+        result.items.append(siteItem);
+
+        if (!result.hasFailure && siteItem.status == NetDiag::Status::Fail) {
+            result.hasFailure = true;
+            result.firstFailed = NetDiag::Layer::Targets;
+            result.summary = QStringLiteral("目标连通性未通过：%1").arg(siteItem.detail);
+            result.suggestion = QStringLiteral(
+                "目标站点均无法访问：检查系统代理、防火墙或运营商网络，稍后重试。");
+        } else if (!result.hasFailure && siteItem.status == NetDiag::Status::Warn) {
+            result.summary = siteItem.detail;
+            result.suggestion = QStringLiteral(
+                "部分站点无法访问：可能是站点自身故障或运营商/防火墙拦截，"
+                "可稍后重试或关闭代理后对比。");
+        }
+    }
+
     renderDiagResult(result);
 
     appendLog("-------------------");
@@ -1605,6 +1681,14 @@ void MainWindow::completeDiagnosis(const NetProbe::Outcome &outcome)
 
     if (!result.hasFailure) {
         appendLog("-------------------");
+        if (hasSiteItem && siteItem.status == NetDiag::Status::Warn) {
+            appendLog("部分站点无法访问，自动检测完成");
+            showMessage("部分站点无法访问",
+                        QStringLiteral("%1\n\n建议：%2")
+                            .arg(result.summary, result.suggestion),
+                        QMessageBox::Warning);
+            return;
+        }
         appendLog("网络各层检查通过，自动检测完成");
         showMessage("网络连接正常",
                     "链路、路由、DNS、代理与 HTTPS 访问都正常，没有发现需要修复的问题。");
@@ -7351,6 +7435,8 @@ bool MainWindow::claimTask(const QString &nextLabel)
             m_dnsRunner->cancel();
         if (m_deepProbe)
             m_deepProbe->cancel();
+        if (m_targetRunner)
+            m_targetRunner->cancel();
         ++m_flow;
         ui->netDiagSummary->setText(QStringLiteral("诊断被新任务打断，本次结果未生成"));
         ui->netDiagSummary->setProperty("state", QString());

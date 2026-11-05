@@ -30,7 +30,7 @@
  */
 namespace NetDiag {
 
-enum class Layer { Link = 1, Route, Dns, Tcp, Http, Proxy, App };
+enum class Layer { Link = 1, Route, Dns, Tcp, Http, Proxy, App, Targets };
 enum class Status { Pass, Fail, Warn, Skip };
 
 struct AdapterInfo {
@@ -100,6 +100,12 @@ CheckItem evaluateProxy(const Snapshot &snapshot, const NetProbe::TcpResult &pro
 CheckItem evaluateTcp(const QVector<DnsProbe::Result> &results,
                       const NetProbe::TcpResult &probe);
 CheckItem evaluateHttp(const NetProbe::HttpResult &probe);
+
+/**
+ * 汇总多目标站点检测：全部可访问为 Pass；部分失败仅提示（Warn，
+ * 通常是单站点或运营商问题）；全部失败才判为 Fail（全局网络异常）。
+ */
+CheckItem evaluateSites(const QVector<NetProbe::SiteResult> &sites);
 
 /** 按 L1→L7 顺序汇总，报告首个失败层；失败层之后的检查项标记为 Skip */
 DiagResult diagnose(const Snapshot &snapshot,

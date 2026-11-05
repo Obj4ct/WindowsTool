@@ -166,4 +166,171 @@ void Runner::cancel()
     }
 }
 
+TargetRunner::TargetRunner(QObject *parent)
+    : QObject(parent)
+{
+}
+
+TargetRunner::~TargetRunner() = default;
+
+void TargetRunner::start(const QVector<SiteTarget> &targets,
+                         const QStringList &dnsServers, int timeoutMs)
+{
+    cancel();
+
+    m_targets = targets;
+    m_dnsServers = dnsServers;
+    m_timeoutMs = timeoutMs > 0 ? timeoutMs : 1200;
+
+    m_results.clear();
+    m_results.resize(m_targets.size());
+    for (int i = 0; i < m_targets.size(); ++i) {
+        m_results[i].label = m_targets.at(i).label;
+        m_results[i].domain = m_targets.at(i).domain;
+    }
+
+    m_active = true;
+    m_starting = true;
+    m_dnsPending = 0;
+    m_tcpPending = 0;
+
+    for (int i = 0; i < m_targets.size(); ++i) {
+        if (m_dnsServers.isEmpty() || m_targets.at(i).domain.isEmpty()) {
+            m_results[i].error = QStringLiteral("没有可用的 DNS 服务器");
+            continue;
+        }
+
+        DnsProbe::AsyncRunner *runner = new DnsProbe::AsyncRunner(this);
+        m_dnsRunners.append(runner);
+        connect(runner, &DnsProbe::AsyncRunner::completed, this,
+                [this, i](const QVector<DnsProbe::Result> &results) {
+                    onDnsDone(i, results);
+                });
+        ++m_dnsPending;
+        runner->start(m_dnsServers, m_targets.at(i).domain, m_timeoutMs, 4);
+    }
+
+    m_starting = false;
+    if (m_dnsPending == 0)
+        startTcpPhase();
+}
+
+void TargetRunner::onDnsDone(int index,
+                             const QVector<DnsProbe::Result> &results)
+{
+    if (!m_active || index < 0 || index >= m_results.size())
+        return;
+
+    SiteResult &site = m_results[index];
+    const DnsProbe::Result *best = nullptr;
+    for (const DnsProbe::Result &candidate : results) {
+        if (candidate.status != DnsProbe::Status::Ok || candidate.elapsedMs < 0)
+            continue;
+        if (!best || candidate.elapsedMs < best->elapsedMs)
+            best = &candidate;
+    }
+
+    if (best && !best->addresses.isEmpty()) {
+        site.resolved = true;
+        site.address = best->addresses.first();
+        site.dnsMs = best->elapsedMs;
+    } else {
+        site.error = QStringLiteral("域名解析失败");
+    }
+
+    --m_dnsPending;
+    if (!m_starting && m_dnsPending == 0)
+        startTcpPhase();
+}
+
+void TargetRunner::startTcpPhase()
+{
+    if (!m_active)
+        return;
+
+    m_starting = true;
+    m_tcpPending = 0;
+
+    for (int i = 0; i < m_results.size(); ++i) {
+        if (!m_results.at(i).resolved)
+            continue;
+
+        Runner *runner = new Runner(this);
+        m_tcpRunners.append(runner);
+        connect(runner, &Runner::finished, this,
+                [this, i](const NetProbe::Outcome &outcome) {
+                    onTcpDone(i, outcome);
+                });
+        ++m_tcpPending;
+        runner->start(m_results.at(i).address, m_targets.at(i).port,
+                      QString(), 0, m_timeoutMs);
+    }
+
+    m_starting = false;
+
+    for (DnsProbe::AsyncRunner *runner : m_dnsRunners)
+        runner->deleteLater();
+    m_dnsRunners.clear();
+
+    if (m_tcpPending == 0)
+        finish();
+}
+
+void TargetRunner::onTcpDone(int index, const NetProbe::Outcome &outcome)
+{
+    if (!m_active || index < 0 || index >= m_results.size())
+        return;
+
+    SiteResult &site = m_results[index];
+    site.ok = outcome.target.ok;
+    site.elapsedMs = outcome.target.elapsedMs;
+    if (!site.ok) {
+        site.error = outcome.target.error.isEmpty()
+                         ? QStringLiteral("连接失败")
+                         : outcome.target.error;
+    }
+
+    --m_tcpPending;
+    if (!m_starting && m_tcpPending == 0)
+        finish();
+}
+
+void TargetRunner::finish()
+{
+    if (!m_active)
+        return;
+
+    m_active = false;
+    m_starting = false;
+
+    for (Runner *runner : m_tcpRunners)
+        runner->deleteLater();
+    m_tcpRunners.clear();
+
+    emit finished(m_results);
+}
+
+void TargetRunner::cancel()
+{
+    m_active = false;
+    m_starting = false;
+    m_dnsPending = 0;
+    m_tcpPending = 0;
+
+    for (DnsProbe::AsyncRunner *runner : m_dnsRunners) {
+        runner->cancel();
+        runner->deleteLater();
+    }
+    m_dnsRunners.clear();
+
+    for (Runner *runner : m_tcpRunners) {
+        runner->cancel();
+        runner->deleteLater();
+    }
+    m_tcpRunners.clear();
+
+    m_results.clear();
+    m_targets.clear();
+}
+
 } // namespace NetProbe

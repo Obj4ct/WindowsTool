@@ -120,6 +120,8 @@ private:
     void handleDnsProbeCompleted(const QVector<DnsProbe::Result> &results);
     void startDeepProbe();
     void handleDeepProbeFinished(const NetProbe::Outcome &outcome);
+    void startTargetProbe();
+    void handleTargetProbeFinished(const QVector<NetProbe::SiteResult> &results);
     void completeDiagnosis(const NetProbe::Outcome &outcome);
     void renderDiagResult(const NetDiag::DiagResult &result);
     void clearDiagRows();
@@ -472,9 +474,12 @@ private:
     // 新任务到来时会被 claimTask 取消）
     DnsProbe::AsyncRunner *m_dnsRunner = nullptr;
     NetProbe::Runner *m_deepProbe = nullptr;
+    NetProbe::TargetRunner *m_targetRunner = nullptr;
     NetDiag::Snapshot m_diagSnapshot;
     QStringList m_diagBackupServers;
     QVector<DnsProbe::Result> m_diagDnsResults;
+    QVector<NetProbe::SiteResult> m_diagSiteResults;
+    NetProbe::Outcome m_diagOutcome;
     bool m_diagProbing = false;
     bool m_diagRetried = false;
     int m_diagFlow = 0;

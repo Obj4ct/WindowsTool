@@ -107,6 +107,11 @@ private slots:
     void fastestServer_picksFastest();
     void fastestServer_noSuccess();
 
+    void evaluateSites_allPass();
+    void evaluateSites_partialWarns();
+    void evaluateSites_allFail();
+    void evaluateSites_emptySkips();
+
     void parseSnapshot_fields();
     void parseSnapshot_malformed();
 
@@ -262,6 +267,78 @@ void NetDiagTest::fastestServer_noSuccess()
     failed.elapsedMs = 1500;
     QVERIFY(DnsProbe::fastestServer(QVector<DnsProbe::Result>{failed}).isEmpty());
     QVERIFY(DnsProbe::fastestServer(QVector<DnsProbe::Result>()).isEmpty());
+}
+
+void NetDiagTest::evaluateSites_allPass()
+{
+    NetProbe::SiteResult baidu;
+    baidu.label = QStringLiteral("百度");
+    baidu.resolved = true;
+    baidu.ok = true;
+    baidu.elapsedMs = 20;
+
+    NetProbe::SiteResult tencent;
+    tencent.label = QStringLiteral("腾讯");
+    tencent.resolved = true;
+    tencent.ok = true;
+    tencent.elapsedMs = 35;
+
+    const NetDiag::CheckItem item =
+        NetDiag::evaluateSites({baidu, tencent});
+    QCOMPARE(item.layer, NetDiag::Layer::Targets);
+    QCOMPARE(item.status, NetDiag::Status::Pass);
+    QCOMPARE(item.elapsedMs, 20);
+    QVERIFY(item.detail.contains(QStringLiteral("百度")));
+    QVERIFY(item.detail.contains(QStringLiteral("腾讯")));
+}
+
+void NetDiagTest::evaluateSites_partialWarns()
+{
+    NetProbe::SiteResult baidu;
+    baidu.label = QStringLiteral("百度");
+    baidu.resolved = true;
+    baidu.ok = true;
+    baidu.elapsedMs = 20;
+
+    NetProbe::SiteResult tencent;
+    tencent.label = QStringLiteral("腾讯");
+    tencent.resolved = true;
+    tencent.ok = false;
+    tencent.error = QStringLiteral("连接超时");
+
+    NetProbe::SiteResult microsoft;
+    microsoft.label = QStringLiteral("微软");
+    microsoft.resolved = false;
+
+    const NetDiag::CheckItem item =
+        NetDiag::evaluateSites({baidu, tencent, microsoft});
+    QCOMPARE(item.status, NetDiag::Status::Warn);
+    QVERIFY(item.detail.contains(QStringLiteral("腾讯")));
+    QVERIFY(item.detail.contains(QStringLiteral("微软")));
+}
+
+void NetDiagTest::evaluateSites_allFail()
+{
+    NetProbe::SiteResult baidu;
+    baidu.label = QStringLiteral("百度");
+    baidu.resolved = true;
+    baidu.ok = false;
+
+    NetProbe::SiteResult tencent;
+    tencent.label = QStringLiteral("腾讯");
+    tencent.resolved = false;
+
+    const NetDiag::CheckItem item =
+        NetDiag::evaluateSites({baidu, tencent});
+    QCOMPARE(item.status, NetDiag::Status::Fail);
+    QVERIFY(item.detail.contains(QStringLiteral("均无法访问")));
+}
+
+void NetDiagTest::evaluateSites_emptySkips()
+{
+    const NetDiag::CheckItem item = NetDiag::evaluateSites({});
+    QCOMPARE(item.status, NetDiag::Status::Skip);
+    QCOMPARE(item.layer, NetDiag::Layer::Targets);
 }
 
 void NetDiagTest::parseSnapshot_fields()

@@ -11,6 +11,10 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
+#include <QVector>
+
+#include "dnsprobe.h"
 
 class QTcpSocket;
 class QTimer;
@@ -102,6 +106,69 @@ private:
     int m_pending = 0;
     bool m_active = false;
     bool m_timedOut = false;
+};
+
+/** 多目标连通性检测的目标站点 */
+struct SiteTarget {
+    QString label;
+    QString domain;
+    quint16 port = 443;
+};
+
+/** 单个目标站点的检测结果：先 DNS 解析，再连接端口 */
+struct SiteResult {
+    QString label;
+    QString domain;
+    QString address;
+    bool resolved = false;
+    bool ok = false;
+    int dnsMs = -1;
+    int elapsedMs = -1;
+    QString error;
+};
+
+/**
+ * 并发检测多个目标站点。
+ *
+ * 每个目标独立完成「DNS 解析 → TCP 连接」，互不影响：单个站点失败
+ * 不会中断其它站点，从而区分「全局断网」与「单站点故障」。
+ * 两段探测都由各自的计时器兜底，总耗时不超过约两个 timeout。
+ */
+class TargetRunner : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit TargetRunner(QObject *parent = nullptr);
+    ~TargetRunner() override;
+
+    void start(const QVector<SiteTarget> &targets, const QStringList &dnsServers,
+               int timeoutMs = 1200);
+
+    /** 放弃本次检测：清理子探测器，不再发出 finished */
+    void cancel();
+
+    bool isRunning() const { return m_active; }
+
+signals:
+    void finished(const QVector<NetProbe::SiteResult> &results);
+
+private:
+    void onDnsDone(int index, const QVector<DnsProbe::Result> &results);
+    void startTcpPhase();
+    void onTcpDone(int index, const NetProbe::Outcome &outcome);
+    void finish();
+
+    QVector<SiteTarget> m_targets;
+    QVector<SiteResult> m_results;
+    QVector<DnsProbe::AsyncRunner *> m_dnsRunners;
+    QVector<Runner *> m_tcpRunners;
+    QStringList m_dnsServers;
+    int m_timeoutMs = 1200;
+    int m_dnsPending = 0;
+    int m_tcpPending = 0;
+    bool m_active = false;
+    bool m_starting = false;
 };
 
 } // namespace NetProbe
