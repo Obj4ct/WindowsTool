@@ -228,6 +228,42 @@ QString batteryStatusLabel(int status)
     }
 }
 
+/** fixdns.ps1 的错误代码 → 中文提示 */
+QString fixDnsErrorLabel(const QString &code)
+{
+    if (code == QLatin1String("not-elevated"))
+        return QStringLiteral("没有得到管理员权限，修复未执行");
+    if (code == QLatin1String("no-result"))
+        return QStringLiteral("提权后的脚本没有返回结果，请重试");
+    if (code == QLatin1String("no-physical-adapter"))
+        return QStringLiteral("没有找到已连接的物理网卡，请检查网线或 Wi-Fi 是否已连接");
+    if (code == QLatin1String("dns-reset-failed"))
+        return QStringLiteral("重置 DNS 配置失败，可能被安全软件拦截");
+    if (code == QLatin1String("backup-failed"))
+        return QStringLiteral("备份原网络配置失败，为避免无法回滚已中止修复");
+    if (code == QLatin1String("dhcp-failed"))
+        return QStringLiteral("把网卡改回自动获取 IP 失败");
+    if (code == QLatin1String("flush-failed"))
+        return QStringLiteral("清空 DNS 缓存失败");
+    return QStringLiteral("未知错误（%1）").arg(code);
+}
+
+/** fixdns.ps1 的动作代码 → 中文描述 */
+QString fixDnsActionLabel(const QString &code)
+{
+    if (code == QLatin1String("backup-ipconfig"))
+        return QStringLiteral("已备份网络配置");
+    if (code == QLatin1String("backup-dns"))
+        return QStringLiteral("已备份 DNS 设置");
+    if (code == QLatin1String("ensure-dhcp"))
+        return QStringLiteral("已确认使用自动获取 IP");
+    if (code == QLatin1String("reset-dns"))
+        return QStringLiteral("已把 DNS 改回自动获取");
+    if (code == QLatin1String("flush-dns"))
+        return QStringLiteral("已清空本机 DNS 缓存");
+    return code;
+}
+
 /** 报告里的文本转义，避免文件路径里的 < > & 破坏 HTML 结构 */
 QString escapeHtml(QString text)
 {
@@ -985,9 +1021,11 @@ void MainWindow::setupOverview()
 
 void MainWindow::setupNetwork()
 {
-    // 自动检测并修复
-    connect(ui->btn_autoCheck, &QAbstractButton::clicked,
-            this, &MainWindow::startAutoCheck);
+    // 自动检测并修复。用户主动点一次就是新的一轮，允许再尝试一次自动修复。
+    connect(ui->btn_autoCheck, &QAbstractButton::clicked, this, [this]() {
+        m_autoFixAttempted = false;
+        startAutoCheck();
+    });
 
     // 查看网络信息
     connect(ui->btn_showNetWork, &QAbstractButton::clicked,
@@ -1102,20 +1140,10 @@ void MainWindow::dispatchTaskFinished(int exitCode)
         handleNetDiagSnapshot();
         break;
     case Task::FixDnsAuto:
-        recordOperation(QStringLiteral("网络修复"),
-                       QStringLiteral("刷新网络配置（改回自动获取）"),
-                       QStringLiteral("当前默认网卡"), true);
-        askNetworkRecovered();
+        handleFixDnsResult(true);
         break;
     case Task::FixDnsManual:
-        appendLog("-------------------");
-        appendLog("网络设置已刷新");
-        recordOperation(QStringLiteral("网络修复"),
-                        QStringLiteral("刷新网络配置（改回自动获取）"),
-                        QStringLiteral("当前默认网卡"), true);
-        showMessage("网络设置已刷新",
-                    "已经把 DNS 改回「自动获取」，并清空了本机的 DNS 缓存。\n\n"
-                    "如果还是上不了网，重启电脑后再试一次。");
+        handleFixDnsResult(false);
         break;
     case Task::Cleaner:
         appendLog("-------------------");
@@ -1559,6 +1587,20 @@ void MainWindow::completeDiagnosis(const NetProbe::Outcome &outcome)
 
     if (result.firstFailed == NetDiag::Layer::Dns) {
         appendLog("-------------------");
+
+        // 一轮检测只自动修一次：修复后复检仍失败就停下来提示用户，
+        // 避免「失败 → 修复 → 复检失败 → 再修复」的死循环。
+        if (m_autoFixAttempted) {
+            appendLog("自动修复后 DNS 仍不可用，已停止重试。");
+            showMessage("DNS 仍无法解析",
+                        "已经重置过 DNS 配置并清空缓存，但域名解析依然失败。\n\n"
+                        "可能是路由器或宽带运营商的 DNS 有问题，建议重启路由器；"
+                        "也可以在「DNS 切换」里改用公共 DNS 再试。",
+                        QMessageBox::Warning);
+            return;
+        }
+
+        m_autoFixAttempted = true;
         appendLog(QStringLiteral("DNS 解析异常：%1，正在尝试修复网络配置……")
                       .arg(result.summary));
         QTimer::singleShot(600, this, [this]() { runFixDns(true); });
@@ -1729,18 +1771,20 @@ void MainWindow::handleDnsCheck()
 /**
  * 执行 DNS 修复脚本。
  *
- * fixDNS.bat 会自行申请管理员权限，并用 -Wait 等待提权后的实例执行完毕，
+ * fixdns.ps1 会自行申请管理员权限，并用 -Wait 等待提权后的实例执行完毕，
  * 因此这里的 finished 信号就代表修复真正结束——不再靠固定延时猜测。
  *
- * @param askAfter true 表示自动检测触发的修复，结束后询问用户是否恢复；
- *                 false 表示用户手动刷新，只记录日志。
+ * @param askAfter true 表示自动检测触发的修复，成功后自动复检网络；
+ *                 false 表示用户手动刷新，仅提示结果。
  */
 void MainWindow::runFixDns(bool askAfter)
 {
-    if (!batExists("fixDNS.bat")) {
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/fixdns.ps1"));
+    if (!QFileInfo::exists(script)) {
         showMessage("缺少脚本文件",
-                    "未找到所需的脚本文件 fixDNS.bat。\n\n"
-                    "请确认程序目录下的 bat 文件夹完整，或重新获取程序。",
+                    "未找到所需的脚本文件 fixdns.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
                     QMessageBox::Critical);
         return;
     }
@@ -1752,30 +1796,104 @@ void MainWindow::runFixDns(bool askAfter)
     appendLog("正在刷新网络配置，请稍候……");
     appendLog("-------------------");
 
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
     m_task = askAfter ? Task::FixDnsAuto : Task::FixDnsManual;
-    m_runner->runBat("fixDNS.bat");
+    m_runner->run(QStringLiteral("powershell.exe"), args);
 }
 
-void MainWindow::askNetworkRecovered()
+/**
+ * 解析 fixdns.ps1 的结果并按实际情况反馈。
+ *
+ * 脚本输出一行 FIXDNS_JSON:，其中 target 是实际被处理的网卡名；失败时
+ * error 给出错误代码（提权取消、没有物理网卡等），由本函数翻译成中文。
+ * 自动检测触发的修复成功后会直接再跑一次分层诊断，用结果验证修复效果，
+ * 而不是让用户自己判断网页能不能打开。
+ */
+void MainWindow::handleFixDnsResult(bool askAfter)
 {
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("FIXDNS_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument doc = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+
     appendLog("-------------------");
-    appendLog("网络配置已重置，请确认当前访问网页是否正常。");
+    if (payload.isEmpty() || parseError.error != QJsonParseError::NoError
+        || !doc.isObject()) {
+        appendLog("没有读到修复结果，脚本可能提前退出。");
+        recordOperation(QStringLiteral("网络修复"),
+                        QStringLiteral("刷新网络配置（改回自动获取）"),
+                        QStringLiteral("当前默认网卡"), false);
+        showMessage("修复结果未知",
+                    "网络配置修复没有返回可识别的结果。\n\n"
+                    "如果刚才取消了管理员授权弹窗，重试并选择「是」即可。",
+                    QMessageBox::Warning);
+        return;
+    }
 
-    QMessageBox box(QMessageBox::Question, "验证修复结果",
-                    "网络配置已重置。请问当前是否可以正常访问网页？",
-                    QMessageBox::Yes | QMessageBox::No, this);
-    box.setWindowIcon(QIcon(":/ico/question.png"));
-    box.setButtonText(QMessageBox::Yes, "可以正常访问");
-    box.setButtonText(QMessageBox::No, "仍然无法访问");
+    const QJsonObject obj = doc.object();
+    const bool ok = obj.value(QStringLiteral("ok")).toBool();
+    const QString error = obj.value(QStringLiteral("error")).toString();
+    const QString target = obj.value(QStringLiteral("target")).toString();
+    const QString dhcp = obj.value(QStringLiteral("dhcp")).toString();
+    const QString backup = obj.value(QStringLiteral("backup")).toString();
+    const QString targetText =
+        target.isEmpty() ? QStringLiteral("当前默认网卡") : target;
 
-    if (box.exec() == QMessageBox::Yes) {
-        appendLog("验证通过，网络已恢复正常。");
+    // ConvertTo-Json 会把只有一项的数组写成字符串，两种形式都要认
+    const QJsonValue actionsValue = obj.value(QStringLiteral("actions"));
+    QStringList actionCodes;
+    if (actionsValue.isArray()) {
+        for (const QJsonValue &value : actionsValue.toArray())
+            actionCodes.append(value.toString());
+    } else if (actionsValue.isString()) {
+        actionCodes.append(actionsValue.toString());
+    }
+    for (const QString &code : actionCodes) {
+        const QString label = fixDnsActionLabel(code);
+        if (!label.isEmpty())
+            appendLog(label);
+    }
+
+    recordOperation(QStringLiteral("网络修复"),
+                    QStringLiteral("刷新网络配置（改回自动获取）"),
+                    targetText, ok);
+
+    if (!ok) {
+        appendLog(QStringLiteral("修复未完成：%1").arg(fixDnsErrorLabel(error)));
+        showMessage("网络配置修复未完成", fixDnsErrorLabel(error),
+                    QMessageBox::Critical);
+        return;
+    }
+
+    if (dhcp == QLatin1String("Disabled"))
+        appendLog("该网卡使用静态 IP，已保持原设置不变");
+    appendLog(QStringLiteral("已重置 %1 的 DNS 配置").arg(targetText));
+    if (!backup.isEmpty())
+        appendLog(QStringLiteral("原配置已备份到 %1").arg(backup));
+
+    if (askAfter) {
+        appendLog("正在复检修复后的网络状态……");
+        ui->netDiagHint->setText(
+            QStringLiteral("修复完成，正在复检各层状态"));
+        QTimer::singleShot(600, this, [this]() { startAutoCheck(); });
     } else {
-        showMessage("问题仍未解决",
-                    "网络设置已经重置，但网页还是打不开。\n\n"
-                    "可能是宽带运营商那边出了故障，也可能是代理或安全软件拦住了。\n\n"
-                    "可以点左下角「关于本程序」查看联系方式，进一步求助。");
-        appendLog("验证未通过，请检查代理设置或联系技术支持。");
+        showMessage("网络设置已刷新",
+                    "已经把 DNS 改回「自动获取」，并清空了本机的 DNS 缓存。\n\n"
+                    "如果还是上不了网，重启电脑后再试一次。");
     }
 }
 

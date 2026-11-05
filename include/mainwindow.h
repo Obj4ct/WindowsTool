@@ -111,7 +111,7 @@ private:
     void handleDnsCheck();
     void handleNetworkInfo();
     void runFixDns(bool askAfter);
-    void askNetworkRecovered();
+    void handleFixDnsResult(bool askAfter);
 
     // 分层诊断（阶段 2）
     void startLegacyAutoCheck();
@@ -469,6 +469,9 @@ private:
     bool m_diagProbing = false;
     bool m_diagRetried = false;
     int m_diagFlow = 0;
+
+    /** 一轮检测是否已自动修复过 DNS，防止修复与复检之间来回重试 */
+    bool m_autoFixAttempted = false;
 };
 
 #endif // MAINWINDOW_H

@@ -198,6 +198,7 @@ WindowsTool/
 │   ├── style.qss         # 全局主题样式
 │   ├── tool.ico          # 程序图标
 │   └── ico/              # 界面 PNG 图标
+│   └── donation/         # 捐赠二维码         
 ├── tests/
 │   ├── netchecktest.cpp
 │   ├── logappendtest.cpp
