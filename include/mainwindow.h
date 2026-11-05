@@ -239,6 +239,8 @@ private:
     // DNS 切换
     void runDnsRead();
     void handleDnsRead();
+    void runDnsSpeedTest();
+    void handleDnsSpeedResults(const QVector<DnsProbe::Result> &results);
     void applyDns(const QString &servers, const QString &label);
     void runDnsWrite(const QString &servers);
     void handleDnsWrite();
@@ -315,6 +317,13 @@ private:
 
     /** 当前默认路由网卡的显示名，DNS 切换时用于提示 */
     QString m_dnsAlias;
+
+    /** 当前网卡实际使用的 DNS 服务器，测速时用于判断是否已是最快 */
+    QStringList m_dnsServers;
+
+    /** DNS 测速的独立探测器，避免与分层诊断的探测互相取消 */
+    DnsProbe::AsyncRunner *m_dnsSpeedRunner = nullptr;
+    bool m_dnsSpeedRunning = false;
 
     /** 本次要切换到的 DNS 名称，用于操作记录 */
     QString m_dnsPendingLabel;

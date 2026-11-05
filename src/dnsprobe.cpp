@@ -8,6 +8,8 @@
 
 #include "dnsprobe.h"
 
+#include <algorithm>
+
 #include <QElapsedTimer>
 #include <QHostAddress>
 #include <QRandomGenerator>
@@ -241,6 +243,51 @@ Result query(const QString &server, const QString &domain,
     return result;
 }
 
+QVector<Result> rankBySpeed(const QVector<Result> &results)
+{
+    QVector<Result> ranked = results;
+    std::stable_sort(ranked.begin(), ranked.end(),
+                     [](const Result &a, const Result &b) {
+        const bool aOk = a.status == Status::Ok && a.elapsedMs >= 0;
+        const bool bOk = b.status == Status::Ok && b.elapsedMs >= 0;
+        if (aOk != bOk)
+            return aOk;
+        if (!aOk)
+            return false;
+        return a.elapsedMs < b.elapsedMs;
+    });
+    return ranked;
+}
+
+QString fastestServer(const QVector<Result> &results)
+{
+    QString best;
+    int bestMs = -1;
+    for (const Result &result : results) {
+        if (result.status != Status::Ok || result.elapsedMs < 0)
+            continue;
+        if (bestMs < 0 || result.elapsedMs < bestMs) {
+            bestMs = result.elapsedMs;
+            best = result.server;
+        }
+    }
+    return best;
+}
+
+QString statusLabel(Status status)
+{
+    switch (status) {
+    case Status::Ok:         return QStringLiteral("正常");
+    case Status::NoResponse: return QStringLiteral("超时");
+    case Status::NoAnswer:   return QStringLiteral("无 A 记录");
+    case Status::NxDomain:   return QStringLiteral("域名不存在");
+    case Status::ServFail:   return QStringLiteral("服务器故障");
+    case Status::Refused:    return QStringLiteral("拒绝访问");
+    case Status::Error:      return QStringLiteral("错误");
+    }
+    return QStringLiteral("未知");
+}
+
 AsyncRunner::AsyncRunner(QObject *parent)
     : QObject(parent)
     , m_socket(new QUdpSocket(this))
@@ -252,7 +299,7 @@ AsyncRunner::AsyncRunner(QObject *parent)
 }
 
 void AsyncRunner::start(const QStringList &servers, const QString &domain,
-                        int timeoutMs)
+                        int timeoutMs, int maxServers)
 {
     cancel();
     m_timeoutMs = timeoutMs;
@@ -262,7 +309,9 @@ void AsyncRunner::start(const QStringList &servers, const QString &domain,
         if (!unique.contains(server))
             unique.append(server);
     }
-    while (unique.size() > 4)
+    if (maxServers < 1)
+        maxServers = 1;
+    while (unique.size() > maxServers)
         unique.removeLast();
 
     if (unique.isEmpty()) {

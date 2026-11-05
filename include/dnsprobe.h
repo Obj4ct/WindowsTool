@@ -70,6 +70,18 @@ Result query(const QString &server, const QString &domain,
              int timeoutMs = 2000, quint16 port = 53);
 
 /**
+ * 按响应速度排序：解析成功且拿到耗时的服务器排在前，耗时升序；
+ * 失败的服务器保持原顺序排在后面。
+ */
+QVector<Result> rankBySpeed(const QVector<Result> &results);
+
+/** 响应最快的可用服务器；没有成功结果时返回空字符串 */
+QString fastestServer(const QVector<Result> &results);
+
+/** 状态的中文短标签，用于测速结果展示 */
+QString statusLabel(Status status);
+
+/**
  * 非阻塞的多服务器 DNS 探测器（供 UI 使用）。
  *
  * 一次并发查询多个服务器，总预算一个 timeout，事件驱动，不占线程、
@@ -82,9 +94,9 @@ class AsyncRunner : public QObject
 public:
     explicit AsyncRunner(QObject *parent = nullptr);
 
-    /** 开始探测；servers 去重，最多取前 4 个 */
+    /** 开始探测；servers 去重，最多取前 maxServers 个（默认 4） */
     void start(const QStringList &servers, const QString &domain,
-               int timeoutMs = 1500);
+               int timeoutMs = 1500, int maxServers = 4);
 
     void cancel();
     bool isRunning() const { return m_active; }

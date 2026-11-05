@@ -338,7 +338,7 @@
 
 #startupSummary, #portsSummary, #largeFilesSummary, #diskHealthSummary,
 #hwinfoSummary, #processesSummary, #diskUsageSummary, #uninstallSummary,
-#driversSummary, #hostsSummary, #dnsSummary, #monitorSummary,
+#driversSummary, #hostsSummary, #dnsSummary, #dnsSpeedResult, #monitorSummary,
 #batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
 #fileLockSummary, #sfcSummary, #wupdateSummary,
 #treemapSummary, #restoreSummary, #operationsSummary, #netDiagSummary {

@@ -103,6 +103,10 @@ private slots:
     void parseResponse_truncated();
     void parseResponse_noAnswer();
 
+    void rankBySpeed_ordersByTimeAndFailuresLast();
+    void fastestServer_picksFastest();
+    void fastestServer_noSuccess();
+
     void parseSnapshot_fields();
     void parseSnapshot_malformed();
 
@@ -205,6 +209,59 @@ void NetDiagTest::parseResponse_noAnswer()
     QString error;
     QVERIFY(DnsProbe::parseResponse(makeResponse(0x1234, 0, QString()), 0x1234, &result, &error));
     QCOMPARE(result.status, DnsProbe::Status::NoAnswer);
+}
+
+void NetDiagTest::rankBySpeed_ordersByTimeAndFailuresLast()
+{
+    QVector<DnsProbe::Result> results;
+    auto add = [&results](const QString &server, DnsProbe::Status status, int ms) {
+        DnsProbe::Result result;
+        result.server = server;
+        result.status = status;
+        result.elapsedMs = ms;
+        results.append(result);
+    };
+
+    add(QStringLiteral("8.8.8.8"), DnsProbe::Status::Ok, 120);
+    add(QStringLiteral("1.1.1.1"), DnsProbe::Status::NoResponse, 1500);
+    add(QStringLiteral("223.5.5.5"), DnsProbe::Status::Ok, 18);
+    add(QStringLiteral("114.114.114.114"), DnsProbe::Status::ServFail, 30);
+
+    const QVector<DnsProbe::Result> ranked = DnsProbe::rankBySpeed(results);
+    QCOMPARE(ranked.size(), 4);
+    QCOMPARE(ranked.at(0).server, QStringLiteral("223.5.5.5"));
+    QCOMPARE(ranked.at(1).server, QStringLiteral("8.8.8.8"));
+    // 失败项保持输入顺序，排在成功项之后
+    QCOMPARE(ranked.at(2).server, QStringLiteral("1.1.1.1"));
+    QCOMPARE(ranked.at(3).server, QStringLiteral("114.114.114.114"));
+}
+
+void NetDiagTest::fastestServer_picksFastest()
+{
+    QVector<DnsProbe::Result> results;
+    DnsProbe::Result slow;
+    slow.server = QStringLiteral("8.8.8.8");
+    slow.status = DnsProbe::Status::Ok;
+    slow.elapsedMs = 120;
+    results.append(slow);
+
+    DnsProbe::Result fast;
+    fast.server = QStringLiteral("223.5.5.5");
+    fast.status = DnsProbe::Status::Ok;
+    fast.elapsedMs = 18;
+    results.append(fast);
+
+    QCOMPARE(DnsProbe::fastestServer(results), QStringLiteral("223.5.5.5"));
+}
+
+void NetDiagTest::fastestServer_noSuccess()
+{
+    DnsProbe::Result failed;
+    failed.server = QStringLiteral("1.1.1.1");
+    failed.status = DnsProbe::Status::NoResponse;
+    failed.elapsedMs = 1500;
+    QVERIFY(DnsProbe::fastestServer(QVector<DnsProbe::Result>{failed}).isEmpty());
+    QVERIFY(DnsProbe::fastestServer(QVector<DnsProbe::Result>()).isEmpty());
 }
 
 void NetDiagTest::parseSnapshot_fields()

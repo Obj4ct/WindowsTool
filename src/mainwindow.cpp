@@ -248,6 +248,24 @@ QString fixDnsErrorLabel(const QString &code)
     return QStringLiteral("未知错误（%1）").arg(code);
 }
 
+/** DNS 地址 → 预设名称，用于测速结果展示 */
+QString dnsServerLabel(const QString &server)
+{
+    if (server == QLatin1String("223.5.5.5") || server == QLatin1String("223.6.6.6"))
+        return QStringLiteral("阿里 DNS");
+    if (server == QLatin1String("119.29.29.29")
+        || server == QLatin1String("182.254.116.116"))
+        return QStringLiteral("腾讯 DNS");
+    if (server == QLatin1String("114.114.114.114")
+        || server == QLatin1String("114.114.115.115"))
+        return QStringLiteral("114 DNS");
+    if (server == QLatin1String("8.8.8.8") || server == QLatin1String("8.8.4.4"))
+        return QStringLiteral("Google DNS");
+    if (server == QLatin1String("180.76.76.76"))
+        return QStringLiteral("百度 DNS");
+    return server;
+}
+
 /** fixdns.ps1 的动作代码 → 中文描述 */
 QString fixDnsActionLabel(const QString &code)
 {
@@ -1106,10 +1124,18 @@ void MainWindow::setupNetwork()
                 [this, servers, label] { applyDns(servers, label); });
     }
 
+    connect(ui->dnsSpeedBtn, &QAbstractButton::clicked,
+            this, &MainWindow::runDnsSpeedTest);
+
     // 分层诊断：非阻塞 DNS 探测器，事件驱动，不占线程
     m_dnsRunner = new DnsProbe::AsyncRunner(this);
     connect(m_dnsRunner, &DnsProbe::AsyncRunner::completed,
             this, &MainWindow::handleDnsProbeCompleted);
+
+    // DNS 测速用独立探测器，避免和分层诊断互相取消
+    m_dnsSpeedRunner = new DnsProbe::AsyncRunner(this);
+    connect(m_dnsSpeedRunner, &DnsProbe::AsyncRunner::completed,
+            this, &MainWindow::handleDnsSpeedResults);
 
     // L4–L6：TCP / HTTPS / 代理端口探测，同样在事件循环里完成
     m_deepProbe = new NetProbe::Runner(this);
@@ -5394,6 +5420,7 @@ void MainWindow::runDnsRead()
     appendLog("正在读取当前 DNS 配置……");
 
     ui->dnsSummary->setText(QStringLiteral("正在读取……"));
+    ui->dnsSpeedResult->clear();
     for (QPushButton *button : {ui->dnsAutoBtn, ui->dnsAliBtn,
                                 ui->dnsTencentBtn, ui->dns114Btn,
                                 ui->dnsGoogleBtn, ui->dnsBaiduBtn})
@@ -5462,6 +5489,7 @@ void MainWindow::handleDnsRead()
     }
 
     m_dnsAlias = alias;
+    m_dnsServers = servers;
 
     QString summary;
     if (index < 0 || alias.isEmpty()) {
@@ -5493,6 +5521,106 @@ void MainWindow::handleDnsRead()
     appendLog(QStringLiteral("网卡 %1 当前 DNS：%2")
                   .arg(alias, servers.isEmpty() ? QStringLiteral("自动获取")
                                                : servers.join(QStringLiteral(", "))));
+}
+
+/** 对预设 DNS 与当前 DNS 并发测速，按 RTT 排序并给出推荐 */
+void MainWindow::runDnsSpeedTest()
+{
+    if (!m_dnsSpeedRunner || m_dnsSpeedRunning)
+        return;
+
+    QStringList servers;
+    const auto appendServers = [&servers](const QString &addresses) {
+        for (const QString &raw : addresses.split(QLatin1Char(','), Qt::SkipEmptyParts)) {
+            const QString server = raw.trimmed();
+            if (!server.isEmpty() && !servers.contains(server))
+                servers.append(server);
+        }
+    };
+
+    // 与 DNS 切换卡片里的预设保持一致；当前网卡的 DNS 也一起测
+    appendServers(QStringLiteral("223.5.5.5,223.6.6.6"));
+    appendServers(QStringLiteral("119.29.29.29,182.254.116.116"));
+    appendServers(QStringLiteral("114.114.114.114,114.114.115.115"));
+    appendServers(QStringLiteral("8.8.8.8,8.8.4.4"));
+    appendServers(QStringLiteral("180.76.76.76"));
+    for (const QString &server : m_dnsServers)
+        appendServers(server);
+
+    if (servers.isEmpty()) {
+        ui->dnsSpeedResult->setText(QStringLiteral("没有可测速的 DNS 服务器。"));
+        return;
+    }
+
+    m_dnsSpeedRunning = true;
+    ui->dnsSpeedBtn->setEnabled(false);
+    ui->dnsSpeedResult->setText(QStringLiteral("正在测速，请稍候……"));
+    appendLog(QStringLiteral("正在测速 %1 个 DNS 服务器……").arg(servers.size()));
+    m_dnsSpeedRunner->start(servers, QStringLiteral("www.baidu.com"), 1500, 16);
+}
+
+/** 测速结束：成功项按耗时升序展示，失败项单列，最后给出推荐 */
+void MainWindow::handleDnsSpeedResults(const QVector<DnsProbe::Result> &results)
+{
+    m_dnsSpeedRunning = false;
+    ui->dnsSpeedBtn->setEnabled(true);
+
+    if (results.isEmpty()) {
+        ui->dnsSpeedResult->setText(QStringLiteral("测速未返回结果，请稍后重试。"));
+        return;
+    }
+
+    const auto displayName = [this](const QString &server) {
+        const QString label = dnsServerLabel(server);
+        QString name = (label == server)
+                           ? server
+                           : QStringLiteral("%1（%2）").arg(label, server);
+        if (m_dnsServers.contains(server))
+            name += QStringLiteral("（当前）");
+        return name;
+    };
+
+    const QVector<DnsProbe::Result> ranked = DnsProbe::rankBySpeed(results);
+    QStringList lines;
+    QStringList failed;
+    int rank = 0;
+    for (const DnsProbe::Result &result : ranked) {
+        if (result.status == DnsProbe::Status::Ok && result.elapsedMs >= 0) {
+            ++rank;
+            lines.append(QStringLiteral("%1. %2  %3 ms")
+                             .arg(rank)
+                             .arg(displayName(result.server))
+                             .arg(result.elapsedMs));
+        } else {
+            failed.append(QStringLiteral("%1 %2")
+                              .arg(displayName(result.server),
+                                   DnsProbe::statusLabel(result.status)));
+        }
+    }
+
+    const QString fastest = DnsProbe::fastestServer(ranked);
+    QString conclusion;
+    if (fastest.isEmpty()) {
+        conclusion = QStringLiteral("所有候选 DNS 都未能解析，请检查网络后再试。");
+    } else if (m_dnsServers.contains(fastest)) {
+        conclusion = QStringLiteral("推荐：当前 DNS %1 已是最快（%2 ms），无需切换。")
+                         .arg(displayName(fastest))
+                         .arg(ranked.first().elapsedMs);
+    } else {
+        conclusion = QStringLiteral("推荐：%1（%2 ms），可点上方按钮切换。")
+                         .arg(displayName(fastest))
+                         .arg(ranked.first().elapsedMs);
+    }
+
+    QString text = QStringLiteral("测速结果（www.baidu.com）：");
+    if (!lines.isEmpty())
+        text += QStringLiteral("\n") + lines.join(QLatin1Char('\n'));
+    if (!failed.isEmpty())
+        text += QStringLiteral("\n不可用：") + failed.join(QStringLiteral("、"));
+    text += QStringLiteral("\n") + conclusion;
+
+    ui->dnsSpeedResult->setText(text);
+    appendLog(QStringLiteral("DNS 测速完成。%1").arg(conclusion));
 }
 
 void MainWindow::applyDns(const QString &servers, const QString &label)
