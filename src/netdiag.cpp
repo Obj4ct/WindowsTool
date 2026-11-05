@@ -131,6 +131,15 @@ Snapshot parseSnapshot(const QByteArray &json, QString *error)
     snapshot.proxy.server = jsonString(proxy, QStringLiteral("server"));
     snapshot.proxy.pacUrl = jsonString(proxy, QStringLiteral("pac"));
 
+    const QJsonObject https = root.value(QStringLiteral("https")).toObject();
+    if (!https.isEmpty()) {
+        snapshot.https.ran = jsonBool(https, QStringLiteral("ran"));
+        snapshot.https.ok = jsonBool(https, QStringLiteral("ok"));
+        snapshot.https.status = jsonInt(https, QStringLiteral("status"));
+        snapshot.https.elapsedMs = jsonInt(https, QStringLiteral("ms"));
+        snapshot.https.error = jsonString(https, QStringLiteral("error"));
+    }
+
     return snapshot;
 }
 
@@ -275,28 +284,213 @@ CheckItem evaluateDns(const Snapshot &snapshot,
     return item;
 }
 
+ProxyEndpoint parseProxyServer(const QString &server)
+{
+    ProxyEndpoint endpoint;
+
+    QString httpsCandidate;
+    QString httpCandidate;
+    QString defaultCandidate;
+
+    for (const QString &raw : server.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+        const QString part = raw.trimmed();
+        if (part.isEmpty())
+            continue;
+
+        const int eq = part.indexOf(QLatin1Char('='));
+        if (eq <= 0) {
+            if (defaultCandidate.isEmpty())
+                defaultCandidate = part;
+            continue;
+        }
+
+        const QString key = part.left(eq).trimmed().toLower();
+        const QString value = part.mid(eq + 1).trimmed();
+        if (key == QLatin1String("https") && httpsCandidate.isEmpty())
+            httpsCandidate = value;
+        else if (key == QLatin1String("http") && httpCandidate.isEmpty())
+            httpCandidate = value;
+    }
+
+    QString chosen = httpsCandidate;
+    if (chosen.isEmpty())
+        chosen = httpCandidate;
+    if (chosen.isEmpty())
+        chosen = defaultCandidate;
+    if (chosen.isEmpty())
+        return endpoint;
+
+    // 去掉协议前缀与多余的斜杠，只保留 host:port
+    const int scheme = chosen.indexOf(QLatin1String("://"));
+    if (scheme >= 0)
+        chosen = chosen.mid(scheme + 3);
+    chosen.remove(QLatin1Char('/'));
+    if (chosen.isEmpty())
+        return endpoint;
+
+    if (chosen.startsWith(QLatin1Char('['))) {
+        const int close = chosen.indexOf(QLatin1Char(']'));
+        if (close < 0)
+            return endpoint;
+        endpoint.host = chosen.mid(1, close - 1);
+        if (close + 1 < chosen.size() && chosen.at(close + 1) == QLatin1Char(':'))
+            endpoint.port = chosen.mid(close + 2).toUShort();
+    } else {
+        const int colon = chosen.lastIndexOf(QLatin1Char(':'));
+        if (colon > 0) {
+            endpoint.host = chosen.left(colon);
+            endpoint.port = chosen.mid(colon + 1).toUShort();
+        } else {
+            endpoint.host = chosen;
+            endpoint.port = 80;
+        }
+    }
+
+    return endpoint;
+}
+
+CheckItem evaluateProxy(const Snapshot &snapshot, const NetProbe::TcpResult &probe)
+{
+    CheckItem item;
+    item.layer = Layer::Proxy;
+    item.name = QStringLiteral("系统代理");
+
+    if (!snapshot.error.isEmpty()) {
+        item.status = Status::Skip;
+        item.detail = snapshot.error;
+        return item;
+    }
+
+    if (!snapshot.proxy.enabled) {
+        item.status = Status::Pass;
+        item.detail = QStringLiteral("未启用系统代理，按直连检测");
+        return item;
+    }
+
+    if (snapshot.proxy.server.trimmed().isEmpty()
+        && !snapshot.proxy.pacUrl.trimmed().isEmpty()) {
+        item.status = Status::Warn;
+        item.detail = QStringLiteral("已启用 PAC 自动配置，未展开脚本解析");
+        return item;
+    }
+
+    const ProxyEndpoint endpoint = parseProxyServer(snapshot.proxy.server);
+    if (!endpoint.valid()) {
+        item.status = Status::Warn;
+        item.detail = QStringLiteral("代理地址无法解析：%1")
+                          .arg(snapshot.proxy.server.trimmed());
+        return item;
+    }
+
+    const QString endpointText = QStringLiteral("%1:%2")
+                                     .arg(endpoint.host)
+                                     .arg(endpoint.port);
+
+    if (!probe.ran) {
+        item.status = Status::Skip;
+        item.detail = QStringLiteral("未探测代理端口（%1）").arg(endpointText);
+        return item;
+    }
+
+    if (probe.ok) {
+        item.status = Status::Pass;
+        item.elapsedMs = probe.elapsedMs;
+        item.detail = QStringLiteral("代理 %1 可连接").arg(endpointText);
+        return item;
+    }
+
+    item.status = Status::Fail;
+    item.detail = QStringLiteral("代理 %1 无法连接：%2")
+                      .arg(endpointText, probe.error.isEmpty()
+                                             ? QStringLiteral("连接失败")
+                                             : probe.error);
+    return item;
+}
+
+CheckItem evaluateTcp(const QVector<DnsProbe::Result> &results,
+                      const NetProbe::TcpResult &probe)
+{
+    CheckItem item;
+    item.layer = Layer::Tcp;
+    item.name = QStringLiteral("目标端口连接");
+
+    if (!probe.ran) {
+        item.status = Status::Skip;
+        item.detail = results.isEmpty()
+            ? QStringLiteral("DNS 未返回可用地址，已跳过端口探测")
+            : QStringLiteral("未执行端口探测");
+        return item;
+    }
+
+    const QString target = QStringLiteral("%1:%2").arg(probe.host).arg(probe.port);
+    if (probe.ok) {
+        item.status = Status::Pass;
+        item.elapsedMs = probe.elapsedMs;
+        item.detail = QStringLiteral("%1 连接成功").arg(target);
+        return item;
+    }
+
+    item.status = Status::Fail;
+    item.detail = QStringLiteral("%1 无法连接：%2")
+                      .arg(target, probe.error.isEmpty()
+                                       ? QStringLiteral("连接失败")
+                                       : probe.error);
+    return item;
+}
+
+CheckItem evaluateHttp(const NetProbe::HttpResult &probe)
+{
+    CheckItem item;
+    item.layer = Layer::Http;
+    item.name = QStringLiteral("HTTPS 响应");
+
+    if (!probe.ran) {
+        item.status = Status::Skip;
+        item.detail = QStringLiteral("未执行 HTTPS 请求");
+        return item;
+    }
+
+    if (probe.ok) {
+        item.status = Status::Pass;
+        item.elapsedMs = probe.elapsedMs;
+        item.detail = QStringLiteral("HTTPS 返回 %1").arg(probe.status);
+        return item;
+    }
+
+    item.status = Status::Fail;
+    if (probe.status > 0) {
+        item.detail = QStringLiteral("HTTPS 返回 %1：%2")
+                          .arg(probe.status)
+                          .arg(probe.error.isEmpty() ? QStringLiteral("响应异常")
+                                                     : probe.error);
+    } else {
+        item.detail = QStringLiteral("HTTPS 请求失败：%1")
+                          .arg(probe.error.isEmpty() ? QStringLiteral("连接失败")
+                                                     : probe.error);
+    }
+    return item;
+}
+
 DiagResult diagnose(const Snapshot &snapshot,
-                    const QVector<DnsProbe::Result> &dnsResults)
+                    const QVector<DnsProbe::Result> &dnsResults,
+                    const NetProbe::Outcome &probe)
 {
     DiagResult result;
     result.items.append(evaluateLink(snapshot));
     result.items.append(evaluateRoute(snapshot));
     result.items.append(evaluateDns(snapshot, dnsResults));
+    // 代理在端口/HTTPS 之前判定：代理挂掉时，后面的失败都由它引起，
+    // 先报代理层能直接给出可操作的建议。
+    result.items.append(evaluateProxy(snapshot, probe.proxy));
+    result.items.append(evaluateTcp(dnsResults, probe.target));
+    result.items.append(evaluateHttp(probe.https));
 
-    const struct { Layer layer; const char *name; } pending[] = {
-        { Layer::Tcp,   "目标端口连接" },
-        { Layer::Http,  "HTTPS 响应" },
-        { Layer::Proxy, "系统代理" },
-        { Layer::App,   "浏览器访问" }
-    };
-    for (const auto &entry : pending) {
-        CheckItem item;
-        item.layer = entry.layer;
-        item.name = QString::fromUtf8(entry.name);
-        item.status = Status::Skip;
-        item.detail = QStringLiteral("尚未检测");
-        result.items.append(item);
-    }
+    CheckItem app;
+    app.layer = Layer::App;
+    app.name = QStringLiteral("浏览器访问");
+    app.status = Status::Skip;
+    app.detail = QStringLiteral("尚未接入浏览器级检测");
+    result.items.append(app);
 
     bool blocked = false;
     for (CheckItem &item : result.items) {
@@ -317,15 +511,13 @@ DiagResult diagnose(const Snapshot &snapshot,
 
     if (!result.hasFailure) {
         for (const auto &item : result.items) {
-            if (item.status == Status::Skip && item.layer >= Layer::Tcp)
-                continue;
             if (item.status == Status::Warn) {
                 result.summary = item.detail;
                 result.suggestion = QStringLiteral("网络可用，但存在需要留意的配置项。");
                 return result;
             }
         }
-        result.summary = QStringLiteral("链路、路由与 DNS 检查均通过。");
+        result.summary = QStringLiteral("网络可用：已检测的各层均通过。");
         result.suggestion = QStringLiteral("网络各层检查通过，无需处理。");
         return result;
     }
@@ -345,6 +537,18 @@ DiagResult diagnose(const Snapshot &snapshot,
         break;
     case Layer::Dns:
         result.suggestion = QStringLiteral("尝试更换 DNS（如 223.5.5.5）或刷新 DNS 缓存。");
+        break;
+    case Layer::Proxy:
+        result.suggestion = QStringLiteral("系统代理不可达：确认代理软件（Clash / v2ray 等）已启动，"
+                                            "或关闭系统代理后重试。");
+        break;
+    case Layer::Tcp:
+        result.suggestion = QStringLiteral("目标端口连接失败：可能是代理规则、防火墙或运营商拦截；"
+                                            "可尝试关闭系统代理后重试。");
+        break;
+    case Layer::Http:
+        result.suggestion = QStringLiteral("HTTPS 请求失败但端口可达：多为 TLS 被拦截、证书异常或代理故障；"
+                                            "检查代理软件与系统时间。");
         break;
     default:
         result.suggestion = QStringLiteral("按诊断结论逐层排查。");

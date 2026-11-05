@@ -118,6 +118,9 @@ private:
     void handleNetDiagSnapshot();
     void startDnsProbe();
     void handleDnsProbeCompleted(const QVector<DnsProbe::Result> &results);
+    void startDeepProbe();
+    void handleDeepProbeFinished(const NetProbe::Outcome &outcome);
+    void completeDiagnosis(const NetProbe::Outcome &outcome);
     void renderDiagResult(const NetDiag::DiagResult &result);
     void clearDiagRows();
     void addDiagRow(const NetDiag::CheckItem &item);
@@ -459,8 +462,10 @@ private:
     // 分层诊断：快照任务结束后由 AsyncRunner 承接 DNS 探测（不占 m_task，
     // 新任务到来时会被 claimTask 取消）
     DnsProbe::AsyncRunner *m_dnsRunner = nullptr;
+    NetProbe::Runner *m_deepProbe = nullptr;
     NetDiag::Snapshot m_diagSnapshot;
     QStringList m_diagBackupServers;
+    QVector<DnsProbe::Result> m_diagDnsResults;
     bool m_diagProbing = false;
     bool m_diagRetried = false;
     int m_diagFlow = 0;

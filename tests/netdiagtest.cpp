@@ -121,6 +121,24 @@ private slots:
 
     void diagnose_firstFailureStopsDownstream();
     void diagnose_allPass();
+    void diagnose_proxyFailureStopsDownstream();
+
+    void parseProxyServer_plain();
+    void parseProxyServer_schemeListPrefersHttps();
+    void parseProxyServer_defaultPort();
+    void parseProxyServer_invalid();
+
+    void evaluateProxy_disabled();
+    void evaluateProxy_pacWarns();
+    void evaluateProxy_unreachable();
+    void evaluateProxy_notProbed();
+
+    void evaluateTcp_pass();
+    void evaluateTcp_failed();
+    void evaluateTcp_notRun();
+
+    void evaluateHttp_pass();
+    void evaluateHttp_failed();
 };
 
 void NetDiagTest::buildQuery_hasHeaderAndQuestion()
@@ -339,6 +357,180 @@ void NetDiagTest::diagnose_allPass()
     QVERIFY(!result.hasFailure);
     QVERIFY(result.summary.contains(QStringLiteral("通过")));
     QCOMPARE(result.items.at(0).status, NetDiag::Status::Pass);
+}
+
+void NetDiagTest::diagnose_proxyFailureStopsDownstream()
+{
+    NetDiag::Snapshot snapshot = NetDiag::parseSnapshot(sampleSnapshot());
+    snapshot.proxy.enabled = true;
+    snapshot.proxy.server = QStringLiteral("127.0.0.1:10808");
+
+    NetProbe::Outcome outcome;
+    outcome.proxy.ran = true;
+    outcome.proxy.ok = false;
+    outcome.proxy.error = QStringLiteral("Connection refused");
+    outcome.target.ran = true;
+    outcome.target.ok = true;
+    outcome.target.host = QStringLiteral("1.2.3.4");
+    outcome.target.port = 443;
+    outcome.target.elapsedMs = 12;
+    outcome.https.ran = true;
+    outcome.https.ok = true;
+    outcome.https.status = 200;
+
+    const NetDiag::DiagResult result =
+        NetDiag::diagnose(snapshot, dnsResults(true), outcome);
+    QVERIFY(result.hasFailure);
+    QCOMPARE(result.firstFailed, NetDiag::Layer::Proxy);
+    QVERIFY(result.suggestion.contains(QStringLiteral("代理")));
+
+    for (const NetDiag::CheckItem &item : result.items) {
+        if (item.layer == NetDiag::Layer::Tcp || item.layer == NetDiag::Layer::Http)
+            QCOMPARE(item.status, NetDiag::Status::Skip);
+    }
+}
+
+void NetDiagTest::parseProxyServer_plain()
+{
+    const NetDiag::ProxyEndpoint endpoint =
+        NetDiag::parseProxyServer(QStringLiteral("127.0.0.1:10808"));
+    QVERIFY(endpoint.valid());
+    QCOMPARE(endpoint.host, QStringLiteral("127.0.0.1"));
+    QCOMPARE(endpoint.port, static_cast<quint16>(10808));
+}
+
+void NetDiagTest::parseProxyServer_schemeListPrefersHttps()
+{
+    const NetDiag::ProxyEndpoint endpoint = NetDiag::parseProxyServer(
+        QStringLiteral("http=127.0.0.1:10809;https=127.0.0.1:10808"));
+    QCOMPARE(endpoint.host, QStringLiteral("127.0.0.1"));
+    QCOMPARE(endpoint.port, static_cast<quint16>(10808));
+}
+
+void NetDiagTest::parseProxyServer_defaultPort()
+{
+    const NetDiag::ProxyEndpoint endpoint =
+        NetDiag::parseProxyServer(QStringLiteral("proxy.local"));
+    QVERIFY(endpoint.valid());
+    QCOMPARE(endpoint.host, QStringLiteral("proxy.local"));
+    QCOMPARE(endpoint.port, static_cast<quint16>(80));
+}
+
+void NetDiagTest::parseProxyServer_invalid()
+{
+    QVERIFY(!NetDiag::parseProxyServer(QString()).valid());
+    QVERIFY(!NetDiag::parseProxyServer(QStringLiteral("   ")).valid());
+}
+
+void NetDiagTest::evaluateProxy_disabled()
+{
+    const NetDiag::Snapshot snapshot = NetDiag::parseSnapshot(sampleSnapshot());
+    const NetDiag::CheckItem item =
+        NetDiag::evaluateProxy(snapshot, NetProbe::TcpResult());
+    QCOMPARE(item.status, NetDiag::Status::Pass);
+    QVERIFY(item.detail.contains(QStringLiteral("直连")));
+}
+
+void NetDiagTest::evaluateProxy_pacWarns()
+{
+    NetDiag::Snapshot snapshot = NetDiag::parseSnapshot(sampleSnapshot());
+    snapshot.proxy.enabled = true;
+    snapshot.proxy.pacUrl = QStringLiteral("http://pac.local/proxy.pac");
+
+    const NetDiag::CheckItem item =
+        NetDiag::evaluateProxy(snapshot, NetProbe::TcpResult());
+    QCOMPARE(item.status, NetDiag::Status::Warn);
+    QVERIFY(item.detail.contains(QStringLiteral("PAC")));
+}
+
+void NetDiagTest::evaluateProxy_unreachable()
+{
+    NetDiag::Snapshot snapshot = NetDiag::parseSnapshot(sampleSnapshot());
+    snapshot.proxy.enabled = true;
+    snapshot.proxy.server = QStringLiteral("127.0.0.1:10808");
+
+    NetProbe::TcpResult probe;
+    probe.ran = true;
+    probe.ok = false;
+    probe.error = QStringLiteral("Connection refused");
+
+    const NetDiag::CheckItem item = NetDiag::evaluateProxy(snapshot, probe);
+    QCOMPARE(item.status, NetDiag::Status::Fail);
+    QVERIFY(item.detail.contains(QStringLiteral("10808")));
+    QVERIFY(item.detail.contains(QStringLiteral("Connection refused")));
+}
+
+void NetDiagTest::evaluateProxy_notProbed()
+{
+    NetDiag::Snapshot snapshot = NetDiag::parseSnapshot(sampleSnapshot());
+    snapshot.proxy.enabled = true;
+    snapshot.proxy.server = QStringLiteral("127.0.0.1:10808");
+
+    const NetDiag::CheckItem item =
+        NetDiag::evaluateProxy(snapshot, NetProbe::TcpResult());
+    QCOMPARE(item.status, NetDiag::Status::Skip);
+}
+
+void NetDiagTest::evaluateTcp_pass()
+{
+    NetProbe::TcpResult probe;
+    probe.ran = true;
+    probe.ok = true;
+    probe.host = QStringLiteral("1.2.3.4");
+    probe.port = 443;
+    probe.elapsedMs = 18;
+
+    const NetDiag::CheckItem item = NetDiag::evaluateTcp(dnsResults(true), probe);
+    QCOMPARE(item.status, NetDiag::Status::Pass);
+    QCOMPARE(item.elapsedMs, 18);
+    QVERIFY(item.detail.contains(QStringLiteral("1.2.3.4:443")));
+}
+
+void NetDiagTest::evaluateTcp_failed()
+{
+    NetProbe::TcpResult probe;
+    probe.ran = true;
+    probe.ok = false;
+    probe.host = QStringLiteral("1.2.3.4");
+    probe.port = 443;
+    probe.error = QStringLiteral("Connection timed out");
+
+    const NetDiag::CheckItem item = NetDiag::evaluateTcp(dnsResults(true), probe);
+    QCOMPARE(item.status, NetDiag::Status::Fail);
+    QVERIFY(item.detail.contains(QStringLiteral("Connection timed out")));
+}
+
+void NetDiagTest::evaluateTcp_notRun()
+{
+    const NetDiag::CheckItem item =
+        NetDiag::evaluateTcp(dnsResults(true), NetProbe::TcpResult());
+    QCOMPARE(item.status, NetDiag::Status::Skip);
+}
+
+void NetDiagTest::evaluateHttp_pass()
+{
+    NetProbe::HttpResult probe;
+    probe.ran = true;
+    probe.ok = true;
+    probe.status = 200;
+    probe.elapsedMs = 56;
+
+    const NetDiag::CheckItem item = NetDiag::evaluateHttp(probe);
+    QCOMPARE(item.status, NetDiag::Status::Pass);
+    QCOMPARE(item.elapsedMs, 56);
+    QVERIFY(item.detail.contains(QStringLiteral("200")));
+}
+
+void NetDiagTest::evaluateHttp_failed()
+{
+    NetProbe::HttpResult probe;
+    probe.ran = true;
+    probe.ok = false;
+    probe.error = QStringLiteral("SSL handshake failed");
+
+    const NetDiag::CheckItem item = NetDiag::evaluateHttp(probe);
+    QCOMPARE(item.status, NetDiag::Status::Fail);
+    QVERIFY(item.detail.contains(QStringLiteral("SSL handshake failed")));
 }
 
 QTEST_MAIN(NetDiagTest)

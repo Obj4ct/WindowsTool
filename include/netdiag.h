@@ -15,6 +15,7 @@
 #include <QVector>
 
 #include "dnsprobe.h"
+#include "netprobe.h"
 
 /**
  * 分层网络诊断引擎。
@@ -24,8 +25,8 @@
  *  - 解析与判定是纯函数，不碰 UI、不启动进程，便于单元测试；
  *  - 从 L1 往上检查，报告第一个失败的层。
  *
- * 阶段 1 实现 L1 链路、L2 路由、L3 DNS 三层判定；
- * L4 以上先以 Skip 占位，阶段 2 接入 TCP / HTTPS / 代理探针。
+ * L1–L3 由快照与 DNS 探测判定；L4/L6 由 NetProbe::Runner 的 TCP 探测判定，
+ * L5 的 HTTPS 结果由 netdiag.ps1 直接写进快照；L7 暂未接入浏览器级检测。
  */
 namespace NetDiag {
 
@@ -53,6 +54,7 @@ struct ProxyInfo {
 struct Snapshot {
     QVector<AdapterInfo> adapters;
     ProxyInfo proxy;
+    NetProbe::HttpResult https;  // 脚本里 Invoke-WebRequest 的结果
     QString defaultAdapter;
     QString error;           // 快照不可用时的原因（脚本缺失 / JSON 解析失败）
 };
@@ -84,9 +86,25 @@ CheckItem evaluateRoute(const Snapshot &snapshot);
 CheckItem evaluateDns(const Snapshot &snapshot,
                       const QVector<DnsProbe::Result> &results);
 
+/** 系统代理的监听地址；PAC 或地址格式异常时 valid() 为 false */
+struct ProxyEndpoint {
+    QString host;
+    quint16 port = 0;
+    bool valid() const { return !host.isEmpty() && port != 0; }
+};
+
+/** 解析 WinINET 的 ProxyServer 值（支持 `host:port` 与 `http=...;https=...`） */
+ProxyEndpoint parseProxyServer(const QString &server);
+
+CheckItem evaluateProxy(const Snapshot &snapshot, const NetProbe::TcpResult &probe);
+CheckItem evaluateTcp(const QVector<DnsProbe::Result> &results,
+                      const NetProbe::TcpResult &probe);
+CheckItem evaluateHttp(const NetProbe::HttpResult &probe);
+
 /** 按 L1→L7 顺序汇总，报告首个失败层；失败层之后的检查项标记为 Skip */
 DiagResult diagnose(const Snapshot &snapshot,
-                    const QVector<DnsProbe::Result> &dnsResults);
+                    const QVector<DnsProbe::Result> &dnsResults,
+                    const NetProbe::Outcome &probe = NetProbe::Outcome());
 
 } // namespace NetDiag
 

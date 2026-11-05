@@ -108,10 +108,36 @@ if ($internetSettings) {
     $proxy.pac = [string]$internetSettings.AutoConfigURL
 }
 
+# HTTPS reachability (L5). Qt in this project may lack a TLS backend plugin,
+# so the request is done here and only the numeric status is reported.
+# Invoke-WebRequest uses the same WinINET proxy settings as the browser.
+$https = [pscustomobject]@{
+    ran    = $true
+    ok     = $false
+    status = 0
+    ms     = -1
+    error  = ''
+}
+$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $response = Invoke-WebRequest -Uri 'https://www.baidu.com' -UseBasicParsing -TimeoutSec 3 -MaximumRedirection 5 -ErrorAction Stop
+    $https.status = [int]$response.StatusCode
+    $https.ok = ($https.status -ge 200 -and $https.status -lt 400)
+} catch {
+    $https.error = [string]$_.Exception.Message
+    if ($_.Exception.Response) {
+        $https.status = [int]$_.Exception.Response.StatusCode
+    }
+}
+$stopwatch.Stop()
+$https.ms = [int]$stopwatch.ElapsedMilliseconds
+
 $payload = [pscustomobject]@{
     adapters       = @($adapters)
     defaultAdapter = $defaultName
     proxy          = $proxy
+    https          = $https
 }
 
 $json = ConvertTo-Json -InputObject $payload -Depth 5 -Compress

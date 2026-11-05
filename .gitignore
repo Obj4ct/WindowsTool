@@ -77,9 +77,8 @@ __pycache__/
 *.pyc
 
 # ---- 本地功能文档（只维护在本地，不随仓库提交） ----
-docs/功能清单.md
-docs/spec.md
-docs/tasks.md
+docs/
+
 
 # ---- 与构建/运行无关的本地杂项 ----
 .screenshots/

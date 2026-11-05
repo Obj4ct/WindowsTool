@@ -1072,6 +1072,11 @@ void MainWindow::setupNetwork()
     m_dnsRunner = new DnsProbe::AsyncRunner(this);
     connect(m_dnsRunner, &DnsProbe::AsyncRunner::completed,
             this, &MainWindow::handleDnsProbeCompleted);
+
+    // L4–L6：TCP / HTTPS / 代理端口探测，同样在事件循环里完成
+    m_deepProbe = new NetProbe::Runner(this);
+    connect(m_deepProbe, &NetProbe::Runner::finished,
+            this, &MainWindow::handleDeepProbeFinished);
 }
 
 /**
@@ -1470,7 +1475,71 @@ void MainWindow::handleDnsProbeCompleted(const QVector<DnsProbe::Result> &result
         }
     }
 
-    const NetDiag::DiagResult result = NetDiag::diagnose(m_diagSnapshot, effective);
+    m_diagDnsResults = effective;
+    startDeepProbe();
+}
+
+/** 从 DNS 结果里取目标地址，发起 TCP / HTTPS / 代理探测 */
+void MainWindow::startDeepProbe()
+{
+    QString target;
+    int elapsed = -1;
+    for (const DnsProbe::Result &item : m_diagDnsResults) {
+        if (item.status != DnsProbe::Status::Ok || item.addresses.isEmpty())
+            continue;
+        if (target.isEmpty() || (item.elapsedMs >= 0
+                                 && (elapsed < 0 || item.elapsedMs < elapsed))) {
+            target = item.addresses.first();
+            elapsed = item.elapsedMs;
+        }
+    }
+
+    // DNS 层没解析成功，后面的探测没有意义，直接汇总（那里会停在上一个失败层）
+    if (target.isEmpty()) {
+        completeDiagnosis(NetProbe::Outcome());
+        return;
+    }
+
+    QString proxyHost;
+    quint16 proxyPort = 0;
+    if (m_diagSnapshot.proxy.enabled) {
+        const NetDiag::ProxyEndpoint endpoint =
+            NetDiag::parseProxyServer(m_diagSnapshot.proxy.server);
+        if (endpoint.valid()) {
+            proxyHost = endpoint.host;
+            proxyPort = endpoint.port;
+        }
+    }
+
+    appendLog(QStringLiteral("正在检查 %1:443 的连接与 HTTPS 响应……").arg(target));
+    ui->netDiagSummary->setText(QStringLiteral("正在检查目标端口与 HTTPS 响应……"));
+
+    m_diagProbing = true;
+    m_diagFlow = m_flow;
+    m_deepProbe->start(target, 443, proxyHost, proxyPort, 1500);
+}
+
+/** L4–L6 探测结束：汇总并展示结论 */
+void MainWindow::handleDeepProbeFinished(const NetProbe::Outcome &outcome)
+{
+    const bool wasProbing = m_diagProbing;
+    m_diagProbing = false;
+
+    if (wasProbing && m_diagFlow != m_flow)
+        return;
+
+    completeDiagnosis(outcome);
+}
+
+/** 用完整的探测结果生成结论、渲染面板，并按首个失败层决定后续动作 */
+void MainWindow::completeDiagnosis(const NetProbe::Outcome &outcome)
+{
+    // L5 的 HTTPS 结果来自脚本快照（Qt 端只做 TCP 探测）
+    NetProbe::Outcome merged = outcome;
+    merged.https = m_diagSnapshot.https;
+
+    const NetDiag::DiagResult result =
+        NetDiag::diagnose(m_diagSnapshot, m_diagDnsResults, merged);
     renderDiagResult(result);
 
     appendLog("-------------------");
@@ -1484,7 +1553,7 @@ void MainWindow::handleDnsProbeCompleted(const QVector<DnsProbe::Result> &result
         appendLog("-------------------");
         appendLog("网络各层检查通过，自动检测完成");
         showMessage("网络连接正常",
-                    "链路、路由与 DNS 解析都正常，没有发现需要修复的问题。");
+                    "链路、路由、DNS、代理与 HTTPS 访问都正常，没有发现需要修复的问题。");
         return;
     }
 
@@ -7034,6 +7103,8 @@ bool MainWindow::claimTask(const QString &nextLabel)
         m_diagProbing = false;
         if (m_dnsRunner)
             m_dnsRunner->cancel();
+        if (m_deepProbe)
+            m_deepProbe->cancel();
         ++m_flow;
         ui->netDiagSummary->setText(QStringLiteral("诊断被新任务打断，本次结果未生成"));
         ui->netDiagSummary->setProperty("state", QString());

@@ -34,11 +34,13 @@ set(APP_SOURCES
     src/uiicons.cpp
     src/dnsprobe.cpp
     src/netdiag.cpp
+    src/netprobe.cpp
     include/mainwindow.h
     include/processrunner.h
     include/netcheck.h
     include/dnsprobe.h
     include/netdiag.h
+    include/netprobe.h
     include/sysmonitor.h
     include/treemapwidget.h
     include/uiicons.h
@@ -127,8 +129,10 @@ if(BUILD_TESTING)
         tests/netdiagtest.cpp
         src/dnsprobe.cpp
         src/netdiag.cpp
+        src/netprobe.cpp
         include/dnsprobe.h
         include/netdiag.h
+        include/netprobe.h
     )
     target_include_directories(NetDiagTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_link_libraries(NetDiagTest PRIVATE Qt5::Test Qt5::Core Qt5::Network)
