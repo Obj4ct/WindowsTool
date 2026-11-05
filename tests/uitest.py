@@ -322,6 +322,13 @@ def test_log_output(exe, shot_dir):
               uia_exists_name_contains(proc.pid, "目标连通性"),
               "未找到多目标检测这一行")
 
+        # 打开 DNS 卡片（脚本只读，不会修改系统设置），确认新增按钮存在
+        opened, detail = uia_click_retry(proc.pid, "btn_dns")
+        check("打开 DNS 卡片", opened, detail)
+        time.sleep(2)
+        check("恢复上次 DNS 按钮存在",
+              uia_exists(proc.pid, "btn_restoreDns"))
+
         shot = os.path.join(shot_dir, "uitest_ping.png")
         if capture(hwnd, shot):
             check("抓取日志截图", True, shot)

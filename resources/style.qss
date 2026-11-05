@@ -589,7 +589,8 @@
 }
 
 /* ---------------- DNS 切换 ---------------- */
-#dnsAutoBtn, #dnsAliBtn, #dnsTencentBtn, #dns114Btn, #dnsGoogleBtn, #dnsBaiduBtn {
+#dnsAutoBtn, #dnsAliBtn, #dnsTencentBtn, #dns114Btn, #dnsGoogleBtn, #dnsBaiduBtn,
+#btn_applyDnsRecommend, #btn_restoreDns {
     background: #F4F6FA;
     border: 1px solid #E1E6EF;
     border-radius: 8px;
@@ -598,17 +599,20 @@
     padding: 0 14px;
 }
 #dnsAutoBtn:hover, #dnsAliBtn:hover, #dnsTencentBtn:hover,
-#dns114Btn:hover, #dnsGoogleBtn:hover, #dnsBaiduBtn:hover {
+#dns114Btn:hover, #dnsGoogleBtn:hover, #dnsBaiduBtn:hover,
+#btn_applyDnsRecommend:hover, #btn_restoreDns:hover {
     background: #EAF1FE;
     border-color: #C3D7F8;
     color: #2B6CD4;
 }
 #dnsAutoBtn:pressed, #dnsAliBtn:pressed, #dnsTencentBtn:pressed,
-#dns114Btn:pressed, #dnsGoogleBtn:pressed, #dnsBaiduBtn:pressed {
+#dns114Btn:pressed, #dnsGoogleBtn:pressed, #dnsBaiduBtn:pressed,
+#btn_applyDnsRecommend:pressed, #btn_restoreDns:pressed {
     background: #E1EAFB;
 }
 #dnsAutoBtn:disabled, #dnsAliBtn:disabled, #dnsTencentBtn:disabled,
-#dns114Btn:disabled, #dnsGoogleBtn:disabled, #dnsBaiduBtn:disabled {
+#dns114Btn:disabled, #dnsGoogleBtn:disabled, #dnsBaiduBtn:disabled,
+#btn_applyDnsRecommend:disabled, #btn_restoreDns:disabled {
     color: #B6BFCC;
 }
 

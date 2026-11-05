@@ -246,7 +246,9 @@ private:
     void runDnsSpeedTest();
     void handleDnsSpeedResults(const QVector<DnsProbe::Result> &results);
     void applyDns(const QString &servers, const QString &label);
-    void runDnsWrite(const QString &servers);
+    void applyRecommendedDns();
+    void restoreDns();
+    void runDnsWrite(const QString &servers, const QString &action);
     void handleDnsWrite();
 
     // 实时监控
@@ -324,6 +326,13 @@ private:
 
     /** 当前网卡实际使用的 DNS 服务器，测速时用于判断是否已是最快 */
     QStringList m_dnsServers;
+
+    /** 测速得到的推荐 DNS（预设服务器串与名称），用于一键应用 */
+    QString m_recommendedDns;
+    QString m_recommendedDnsLabel;
+
+    /** 当前 DNS 写任务是否为「恢复上次 DNS」 */
+    bool m_dnsRestoreMode = false;
 
     /** DNS 测速的独立探测器，避免与分层诊断的探测互相取消 */
     DnsProbe::AsyncRunner *m_dnsSpeedRunner = nullptr;

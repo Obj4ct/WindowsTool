@@ -5,7 +5,7 @@
 # See the LICENSE file in the project root for the full license text.
 
 param(
-    [ValidateSet('read', 'apply')][string]$Action = 'read',
+    [ValidateSet('read', 'apply', 'restore')][string]$Action = 'read',
     [string]$Servers = '',
     [switch]$Auto,
     [string]$Result = ''
@@ -17,8 +17,8 @@ $ProgressPreference = 'SilentlyContinue'
 # ASCII-only on purpose (PowerShell 5.1 reads BOM-less .ps1 as ANSI).
 # User-facing text is assembled in Qt from the emitted "code" value.
 
-function Write-Dns-Result([bool]$Ok, [string]$Code) {
-    $json = [pscustomobject]@{ ok = $Ok; code = $Code } | ConvertTo-Json -Compress
+function Write-Dns-Result([bool]$Ok, [string]$Code, [string]$Backup = '') {
+    $json = [pscustomobject]@{ ok = $Ok; code = $Code; backup = $Backup } | ConvertTo-Json -Compress
     if ($Result) {
         [System.IO.File]::WriteAllText($Result, $json, (New-Object System.Text.UTF8Encoding($false)))
     }
@@ -75,7 +75,7 @@ try {
 
 if (-not $isAdmin) {
     $tempResult = Join-Path $env:TEMP ('wt-dns-' + [guid]::NewGuid().ToString('N') + '.json')
-    $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Action apply -Result `"$tempResult`""
+    $argList = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Action $Action -Result `"$tempResult`""
     if ($Auto) { $argList += ' -Auto' }
     if ($Servers) { $argList += " -Servers `"$Servers`"" }
 
@@ -102,6 +102,43 @@ if (-not $isAdmin) {
     exit 0
 }
 
+$backupDir = Join-Path $env:ProgramData 'WindowsTool'
+$backupFile = Join-Path $backupDir 'dns-backup.json'
+
+if ($Action -eq 'restore') {
+    if (-not (Test-Path -LiteralPath $backupFile)) {
+        Write-Dns-Result $false 'no-backup'
+        exit 0
+    }
+
+    try {
+        $raw = [System.IO.File]::ReadAllText($backupFile)
+        $data = ConvertFrom-Json $raw
+        $index = [int]$data.index
+        if ($index -lt 0) { $index = Get-DefaultAdapterIndex }
+        if ($index -lt 0) {
+            Write-Dns-Result $false 'no-adapter'
+            exit 0
+        }
+        if (-not (Get-NetAdapter -InterfaceIndex $index -ErrorAction SilentlyContinue)) {
+            Write-Dns-Result $false 'no-adapter'
+            exit 0
+        }
+
+        $addresses = @($data.dns | ForEach-Object { [string]$_ } | Where-Object { $_ -ne '' })
+        if ($data.auto -or $addresses.Count -eq 0) {
+            Set-DnsClientServerAddress -InterfaceIndex $index -ResetServerAddresses -ErrorAction Stop
+        } else {
+            Set-DnsClientServerAddress -InterfaceIndex $index -ServerAddresses $addresses -ErrorAction Stop
+        }
+        Clear-DnsClientCache -ErrorAction SilentlyContinue
+        Write-Dns-Result $true 'restored'
+    } catch {
+        Write-Dns-Result $false 'restore-error'
+    }
+    exit 0
+}
+
 try {
     $index = Get-DefaultAdapterIndex
     if ($index -lt 0) {
@@ -109,6 +146,34 @@ try {
         exit 0
     }
 
+    # Back up the current DNS before changing it; abort if the backup fails.
+    $currentDns = @(Get-DnsClientServerAddress -InterfaceIndex $index -AddressFamily IPv4 -ErrorAction Stop |
+        Select-Object -ExpandProperty ServerAddresses)
+    $adapter = Get-NetAdapter -InterfaceIndex $index -ErrorAction SilentlyContinue
+    $backupAlias = ''
+    if ($adapter) { $backupAlias = $adapter.Name }
+    $backupData = [pscustomobject]@{
+        index = $index
+        alias = $backupAlias
+        auto  = ($currentDns.Count -eq 0)
+        dns   = @($currentDns)
+        time  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    }
+
+    if (-not (Test-Path -LiteralPath $backupDir)) {
+        New-Item -ItemType Directory -Path $backupDir -Force -ErrorAction Stop | Out-Null
+    }
+    $backupJson = ConvertTo-Json -InputObject $backupData -Compress -Depth 4
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($backupFile, $backupJson, $utf8)
+    $stampFile = Join-Path $backupDir ('dns-backup-' + (Get-Date).ToString('yyyyMMdd-HHmmss') + '.json')
+    [System.IO.File]::WriteAllText($stampFile, $backupJson, $utf8)
+} catch {
+    Write-Dns-Result $false 'backup-failed'
+    exit 0
+}
+
+try {
     if ($Auto) {
         Set-DnsClientServerAddress -InterfaceIndex $index -ResetServerAddresses -ErrorAction Stop
     } else {
@@ -121,7 +186,7 @@ try {
     }
 
     Clear-DnsClientCache -ErrorAction SilentlyContinue
-    Write-Dns-Result $true 'applied'
+    Write-Dns-Result $true 'applied' $backupFile
 } catch {
     Write-Dns-Result $false 'error'
 }

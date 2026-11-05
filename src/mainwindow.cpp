@@ -266,6 +266,32 @@ QString dnsServerLabel(const QString &server)
     return server;
 }
 
+/** 测速命中的服务器 → 该预设的完整服务器串（应用时保持主备双地址） */
+QString dnsPresetServers(const QString &server)
+{
+    if (server == QLatin1String("223.5.5.5") || server == QLatin1String("223.6.6.6"))
+        return QStringLiteral("223.5.5.5,223.6.6.6");
+    if (server == QLatin1String("119.29.29.29")
+        || server == QLatin1String("182.254.116.116"))
+        return QStringLiteral("119.29.29.29,182.254.116.116");
+    if (server == QLatin1String("114.114.114.114")
+        || server == QLatin1String("114.114.115.115"))
+        return QStringLiteral("114.114.114.114,114.114.115.115");
+    if (server == QLatin1String("8.8.8.8") || server == QLatin1String("8.8.4.4"))
+        return QStringLiteral("8.8.8.8,8.8.4.4");
+    if (server == QLatin1String("180.76.76.76"))
+        return QStringLiteral("180.76.76.76");
+    return QString();
+}
+
+/** DNS 卡片里所有会改动配置的按钮（预设切换 / 应用推荐 / 恢复上次） */
+QVector<QPushButton *> dnsActionButtons(Ui::MainWindow *ui)
+{
+    return {ui->dnsAutoBtn,      ui->dnsAliBtn,     ui->dnsTencentBtn,
+            ui->dns114Btn,       ui->dnsGoogleBtn,  ui->dnsBaiduBtn,
+            ui->btn_applyDnsRecommend, ui->btn_restoreDns};
+}
+
 /** fixdns.ps1 的动作代码 → 中文描述 */
 QString fixDnsActionLabel(const QString &code)
 {
@@ -1130,6 +1156,10 @@ void MainWindow::setupNetwork()
 
     connect(ui->dnsSpeedBtn, &QAbstractButton::clicked,
             this, &MainWindow::runDnsSpeedTest);
+    connect(ui->btn_applyDnsRecommend, &QAbstractButton::clicked,
+            this, &MainWindow::applyRecommendedDns);
+    connect(ui->btn_restoreDns, &QAbstractButton::clicked,
+            this, &MainWindow::restoreDns);
 
     // 分层诊断：非阻塞 DNS 探测器，事件驱动，不占线程
     m_dnsRunner = new DnsProbe::AsyncRunner(this);
@@ -5673,9 +5703,10 @@ void MainWindow::runDnsRead()
 
     ui->dnsSummary->setText(QStringLiteral("正在读取……"));
     ui->dnsSpeedResult->clear();
-    for (QPushButton *button : {ui->dnsAutoBtn, ui->dnsAliBtn,
-                                ui->dnsTencentBtn, ui->dns114Btn,
-                                ui->dnsGoogleBtn, ui->dnsBaiduBtn})
+    m_recommendedDns.clear();
+    m_recommendedDnsLabel.clear();
+    ui->btn_applyDnsRecommend->setVisible(false);
+    for (QPushButton *button : dnsActionButtons(ui))
         button->setEnabled(false);
     ui->cardDns->setVisible(true);
 
@@ -5764,9 +5795,7 @@ void MainWindow::handleDnsRead()
                        dnsText);
     ui->dnsSummary->setText(summary);
 
-    for (QPushButton *button : {ui->dnsAutoBtn, ui->dnsAliBtn,
-                                ui->dnsTencentBtn, ui->dns114Btn,
-                                ui->dnsGoogleBtn, ui->dnsBaiduBtn})
+    for (QPushButton *button : dnsActionButtons(ui))
         button->setEnabled(true);
 
     appendLog("-------------------");
@@ -5806,6 +5835,10 @@ void MainWindow::runDnsSpeedTest()
 
     m_dnsSpeedRunning = true;
     ui->dnsSpeedBtn->setEnabled(false);
+    m_recommendedDns.clear();
+    m_recommendedDnsLabel.clear();
+    ui->btn_applyDnsRecommend->setVisible(false);
+    ui->btn_applyDnsRecommend->setEnabled(false);
     ui->dnsSpeedResult->setText(QStringLiteral("正在测速，请稍候……"));
     appendLog(QStringLiteral("正在测速 %1 个 DNS 服务器……").arg(servers.size()));
     m_dnsSpeedRunner->start(servers, QStringLiteral("www.baidu.com"), 1500, 16);
@@ -5818,6 +5851,9 @@ void MainWindow::handleDnsSpeedResults(const QVector<DnsProbe::Result> &results)
     ui->dnsSpeedBtn->setEnabled(true);
 
     if (results.isEmpty()) {
+        m_recommendedDns.clear();
+        m_recommendedDnsLabel.clear();
+        ui->btn_applyDnsRecommend->setVisible(false);
         ui->dnsSpeedResult->setText(QStringLiteral("测速未返回结果，请稍后重试。"));
         return;
     }
@@ -5852,6 +5888,8 @@ void MainWindow::handleDnsSpeedResults(const QVector<DnsProbe::Result> &results)
 
     const QString fastest = DnsProbe::fastestServer(ranked);
     QString conclusion;
+    m_recommendedDns.clear();
+    m_recommendedDnsLabel.clear();
     if (fastest.isEmpty()) {
         conclusion = QStringLiteral("所有候选 DNS 都未能解析，请检查网络后再试。");
     } else if (m_dnsServers.contains(fastest)) {
@@ -5859,10 +5897,18 @@ void MainWindow::handleDnsSpeedResults(const QVector<DnsProbe::Result> &results)
                          .arg(displayName(fastest))
                          .arg(ranked.first().elapsedMs);
     } else {
-        conclusion = QStringLiteral("推荐：%1（%2 ms），可点上方按钮切换。")
+        m_recommendedDns = dnsPresetServers(fastest);
+        if (m_recommendedDns.isEmpty())
+            m_recommendedDns = fastest;
+        m_recommendedDnsLabel = dnsServerLabel(fastest);
+        conclusion = QStringLiteral("推荐：%1（%2 ms），可点下方「应用推荐」一键切换。")
                          .arg(displayName(fastest))
                          .arg(ranked.first().elapsedMs);
     }
+
+    ui->btn_applyDnsRecommend->setVisible(!m_recommendedDns.isEmpty());
+    ui->btn_applyDnsRecommend->setEnabled(!m_recommendedDns.isEmpty()
+                                          && !m_dnsAlias.isEmpty());
 
     QString text = QStringLiteral("测速结果（www.baidu.com）：");
     if (!lines.isEmpty())
@@ -5891,17 +5937,52 @@ void MainWindow::applyDns(const QString &servers, const QString &label)
 
     if (QMessageBox::question(this, QStringLiteral("切换 DNS"),
                               QStringLiteral("将把「%1」的 DNS 设置为：\n%2（%3）\n\n"
+                                             "切换前会自动备份当前 DNS，之后可用"
+                                             "「恢复上次 DNS」还原。\n\n"
                                              "切换需要管理员权限，确定继续？")
                                   .arg(m_dnsAlias, label, target))
         != QMessageBox::Yes)
         return;
 
     m_dnsPendingLabel = label;
-    runDnsWrite(servers);
+    runDnsWrite(servers, QStringLiteral("apply"));
 }
 
-void MainWindow::runDnsWrite(const QString &servers)
+/** 应用测速推荐的最快 DNS */
+void MainWindow::applyRecommendedDns()
 {
+    if (m_recommendedDns.isEmpty())
+        return;
+
+    applyDns(m_recommendedDns, m_recommendedDnsLabel);
+}
+
+/** 还原到上一次切换前的 DNS 设置 */
+void MainWindow::restoreDns()
+{
+    if (m_dnsAlias.isEmpty()) {
+        showMessage("请先读取当前设置",
+                    "还没读到现在的 DNS 设置，先点一下「换 DNS」磁贴。",
+                    QMessageBox::Information);
+        return;
+    }
+
+    if (QMessageBox::question(
+            this, QStringLiteral("恢复上次 DNS"),
+            QStringLiteral("将把「%1」的 DNS 还原为上一次切换前的设置。\n\n"
+                           "恢复需要管理员权限，确定继续？")
+                .arg(m_dnsAlias))
+        != QMessageBox::Yes)
+        return;
+
+    m_dnsRestoreMode = true;
+    m_dnsPendingLabel = QStringLiteral("上次的 DNS 设置");
+    runDnsWrite(QString(), QStringLiteral("restore"));
+}
+
+void MainWindow::runDnsWrite(const QString &servers, const QString &action)
+{
+    const bool restore = (action == QLatin1String("restore"));
     const QString script = QDir(QCoreApplication::applicationDirPath())
                                .filePath(QStringLiteral("ps1/dns.ps1"));
 
@@ -5911,29 +5992,33 @@ void MainWindow::runDnsWrite(const QString &servers)
         return;
     }
 
-    if (!claimTask(QStringLiteral("切换 DNS")))
+    if (!claimTask(restore ? QStringLiteral("恢复 DNS")
+                           : QStringLiteral("切换 DNS")))
         return;
 
     ++m_flow;
 
-    appendLog("正在切换 DNS，若弹出权限提示请选择“是”……");
+    appendLog(restore
+                  ? QStringLiteral("正在恢复上次的 DNS，若弹出权限提示请选择“是”……")
+                  : QStringLiteral("正在切换 DNS，若弹出权限提示请选择“是”……"));
 
-    ui->dnsSummary->setText(QStringLiteral("正在切换……"));
-    for (QPushButton *button : {ui->dnsAutoBtn, ui->dnsAliBtn,
-                                ui->dnsTencentBtn, ui->dns114Btn,
-                                ui->dnsGoogleBtn, ui->dnsBaiduBtn})
+    ui->dnsSummary->setText(restore ? QStringLiteral("正在恢复……")
+                                    : QStringLiteral("正在切换……"));
+    for (QPushButton *button : dnsActionButtons(ui))
         button->setEnabled(false);
 
     QStringList args = {
         QStringLiteral("-NoProfile"),
         QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
         QStringLiteral("-File"), script,
-        QStringLiteral("-Action"), QStringLiteral("apply")
+        QStringLiteral("-Action"), action
     };
-    if (servers.isEmpty()) {
-        args << QStringLiteral("-Auto");
-    } else {
-        args << QStringLiteral("-Servers") << servers;
+    if (!restore) {
+        if (servers.isEmpty()) {
+            args << QStringLiteral("-Auto");
+        } else {
+            args << QStringLiteral("-Servers") << servers;
+        }
     }
 
     m_task = Task::DnsWrite;
@@ -5942,6 +6027,7 @@ void MainWindow::runDnsWrite(const QString &servers)
 
 void MainWindow::handleDnsWrite()
 {
+    const bool restore = m_dnsRestoreMode;
     const QString output = m_runner->collectedOutput();
     const QString marker = QStringLiteral("DNS_WRITE_JSON:");
     const int markerPos = output.indexOf(marker);
@@ -5957,22 +6043,36 @@ void MainWindow::handleDnsWrite()
     const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
 
     QString code;
+    QString backup;
     if (!payload.isEmpty() && parseError.error == QJsonParseError::NoError
         && document.isObject()) {
-        code = document.object().value(QStringLiteral("code")).toString();
+        const QJsonObject data = document.object();
+        code = data.value(QStringLiteral("code")).toString();
+        backup = data.value(QStringLiteral("backup")).toString();
     }
 
-    if (code == QLatin1String("applied")) {
+    if (code == QLatin1String("applied") || code == QLatin1String("restored")) {
+        const bool restored = (code == QLatin1String("restored"));
         appendLog("-------------------");
-        appendLog("DNS 已切换，正在刷新解析缓存。");
+        appendLog(restored ? "已恢复上次的 DNS，正在刷新解析缓存。"
+                           : "DNS 已切换，正在刷新解析缓存。");
         recordOperation(QStringLiteral("DNS"),
-                        QStringLiteral("切换 DNS"),
+                        restored ? QStringLiteral("恢复上次 DNS")
+                                 : QStringLiteral("切换 DNS"),
                         m_dnsPendingLabel.isEmpty()
                             ? QStringLiteral("当前默认网卡")
                             : m_dnsPendingLabel,
                         true);
         m_dnsPendingLabel.clear();
-        showMessage("DNS 已切换", QStringLiteral("新的 DNS 已生效，正在重新读取当前配置。"));
+        m_dnsRestoreMode = false;
+
+        QString detail = restored
+                             ? QStringLiteral("已还原为上一次切换前的 DNS，"
+                                              "正在重新读取当前配置。")
+                             : QStringLiteral("新的 DNS 已生效，正在重新读取当前配置。");
+        if (!backup.isEmpty())
+            detail += QStringLiteral("\n\n原设置已备份到：\n%1").arg(backup);
+        showMessage(restored ? "已恢复上次 DNS" : "DNS 已切换", detail);
         runDnsRead();
         return;
     }
@@ -5986,8 +6086,16 @@ void MainWindow::handleDnsWrite()
         message = QStringLiteral("没有提供可用的 DNS 地址。");
     } else if (code == QLatin1String("no-result")) {
         message = QStringLiteral("提权进程没有返回结果，DNS 可能未修改。");
+    } else if (code == QLatin1String("backup-failed")) {
+        message = QStringLiteral("备份当前 DNS 失败，为避免无法回滚已中止切换。");
+    } else if (code == QLatin1String("no-backup")) {
+        message = QStringLiteral("还没有可恢复的 DNS 备份，先切换一次 DNS 就会自动备份。");
+    } else if (code == QLatin1String("restore-error")) {
+        message = QStringLiteral("恢复上次 DNS 失败，可能是备份已失效或权限不足。");
     } else if (code == QLatin1String("error")) {
-        message = QStringLiteral("设置 DNS 时出错，可能是权限不足或网卡不支持。");
+        message = restore
+                      ? QStringLiteral("恢复 DNS 时出错，可能是权限不足或网卡不支持。")
+                      : QStringLiteral("设置 DNS 时出错，可能是权限不足或网卡不支持。");
     } else {
         message = QStringLiteral("未能解析切换结果，请重新读取 DNS 确认当前配置。");
     }
@@ -5997,13 +6105,17 @@ void MainWindow::handleDnsWrite()
     if (!code.isEmpty() && code != QLatin1String("error"))
         appendLog(QStringLiteral("（返回码：%1）").arg(code));
 
-    showMessage("切换 DNS 失败", message, QMessageBox::Warning);
+    showMessage(restore ? "恢复 DNS 失败" : "切换 DNS 失败", message,
+                QMessageBox::Warning);
+
+    m_dnsPendingLabel.clear();
+    m_dnsRestoreMode = false;
 
     ui->dnsSummary->setText(message);
-    for (QPushButton *button : {ui->dnsAutoBtn, ui->dnsAliBtn,
-                                ui->dnsTencentBtn, ui->dns114Btn,
-                                ui->dnsGoogleBtn, ui->dnsBaiduBtn})
-        button->setEnabled(!m_dnsAlias.isEmpty());
+    const bool ready = !m_dnsAlias.isEmpty();
+    for (QPushButton *button : dnsActionButtons(ui))
+        button->setEnabled(ready);
+    ui->btn_applyDnsRecommend->setVisible(!m_recommendedDns.isEmpty());
 }
 
 // ---------------------------------------------------------------- 实时监控
