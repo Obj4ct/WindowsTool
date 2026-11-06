@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2023 素曜
+﻿﻿# Copyright (c) 2023 素曜
 # SPDX-License-Identifier: MIT
 #
 # This file is part of WindowsTool and is distributed under the MIT License.
@@ -67,9 +67,19 @@ $actions = @()
 $errorCode = ''
 
 try {
-    ipconfig.exe /all > $backupPath 2>&1
+    # Native commands may write warnings to stderr; with ErrorActionPreference=Stop
+    # that alone throws NativeCommandError even when the backup was written.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & ipconfig.exe /all > $backupPath 2>&1
+    $ErrorActionPreference = $previousPreference
+    if (-not (Test-Path -LiteralPath $backupPath) -or
+        (Get-Item -LiteralPath $backupPath).Length -eq 0) {
+        throw 'empty-backup'
+    }
     $actions += 'backup-ipconfig'
 } catch {
+    $ErrorActionPreference = 'Stop'
     $errorCode = 'backup-failed'
 }
 
@@ -82,6 +92,27 @@ try {
     if (-not $errorCode) {
         $errorCode = 'backup-failed'
     }
+}
+
+# ---- stop here if the backup failed ----------------------------------------
+if ($errorCode -ne '') {
+    $result = [pscustomobject]@{
+        ok             = $false
+        target         = ''
+        interfaceIndex = 0
+        dhcp           = ''
+        backup         = $backupPath
+        dnsBackup      = $dnsBackupPath
+        actions        = @($actions)
+        error          = $errorCode
+    }
+    $json = $result | ConvertTo-Json -Compress -Depth 4
+    if ($ResultFile) {
+        [System.IO.File]::WriteAllText($ResultFile, $json,
+            (New-Object System.Text.UTF8Encoding($false)))
+    }
+    Write-Output ('FIXDNS_JSON:' + $json)
+    exit 0
 }
 
 # Pick the physical adapter that carries the default route. Virtual adapters

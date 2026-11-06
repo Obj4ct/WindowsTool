@@ -15,6 +15,7 @@
 #include "uiicons.h"
 
 #include <QAbstractButton>
+#include <QApplication>
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QDateTime>
@@ -45,6 +46,7 @@
 #include <QProcess>
 #include <QPropertyAnimation>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QStyle>
 #include <QTextCodec>
 #include <QTextCursor>
@@ -293,6 +295,32 @@ QVector<QPushButton *> dnsActionButtons(Ui::MainWindow *ui)
     return {ui->dnsAutoBtn,      ui->dnsAliBtn,     ui->dnsTencentBtn,
             ui->dns114Btn,       ui->dnsGoogleBtn,  ui->dnsBaiduBtn,
             ui->btn_applyDnsRecommend, ui->btn_restoreDns};
+}
+
+/** 系统代理卡片里所有会改动配置或重新读取的按钮 */
+QVector<QPushButton *> proxyActionButtons(Ui::MainWindow *ui)
+{
+    return {ui->btn_proxyOn, ui->btn_proxyOff, ui->btn_proxyRefresh,
+            ui->btn_proxyRestore};
+}
+
+/** 从 proxy.ps1 输出里取出 PROXY_JSON 对象 */
+bool parseProxyPayload(const QString &output, QJsonObject *object)
+{
+    const QString marker = QStringLiteral("PROXY_JSON:");
+    const int pos = output.indexOf(marker);
+    if (pos < 0)
+        return false;
+    const QString payload = output.mid(pos + marker.size())
+                                .section(QLatin1Char('\n'), 0, 0)
+                                .trimmed();
+    QJsonParseError error{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &error);
+    if (payload.isEmpty() || error.error != QJsonParseError::NoError
+        || !document.isObject())
+        return false;
+    *object = document.object();
+    return true;
 }
 
 /** fakecheck.ps1 的风险等级 → 中文徽章 */
@@ -600,6 +628,7 @@ void MainWindow::setupTheme()
     ui->btn_ports->setIcon(tileIcon(UiIcons::Icon::Link));
     ui->btn_hosts->setIcon(tileIcon(UiIcons::Icon::Link));
     ui->btn_dns->setIcon(tileIcon(UiIcons::Icon::Network));
+    ui->btn_proxy->setIcon(tileIcon(UiIcons::Icon::Link));
 
     // 系统维护
     ui->btn_cleaner->setIcon(tileIcon(UiIcons::Icon::Clean));
@@ -638,6 +667,7 @@ void MainWindow::setupTheme()
                             ui->btn_autoCheck, ui->btn_showNetWork,
                             ui->btn_ports,
                             ui->btn_hosts, ui->btn_dns,
+                            ui->btn_proxy,
                             ui->btn_cleaner, ui->btn_fixWhite,
                             ui->btn_healthCheck, ui->btn_sfc,
                             ui->btn_wupdate,
@@ -1227,6 +1257,19 @@ void MainWindow::setupNetwork()
     connect(ui->btn_restoreDns, &QAbstractButton::clicked,
             this, &MainWindow::restoreDns);
 
+    // 系统代理开关
+    connect(ui->btn_proxy, &QAbstractButton::clicked,
+            this, &MainWindow::runProxyRead);
+    connect(ui->btn_proxyRefresh, &QAbstractButton::clicked,
+            this, &MainWindow::runProxyRead);
+    connect(ui->btn_proxyOff, &QAbstractButton::clicked, this,
+            [this] { writeProxy(QStringLiteral("off")); });
+    connect(ui->btn_proxyRestore, &QAbstractButton::clicked, this,
+            [this] { writeProxy(QStringLiteral("restore")); });
+    connect(ui->btn_proxyOn, &QAbstractButton::clicked, this, [this] {
+        writeProxy(QStringLiteral("apply"), ui->proxyServerInput->text());
+    });
+
     // 分层诊断：非阻塞 DNS 探测器，事件驱动，不占线程
     m_dnsRunner = new DnsProbe::AsyncRunner(this);
     connect(m_dnsRunner, &DnsProbe::AsyncRunner::completed,
@@ -1359,6 +1402,12 @@ void MainWindow::dispatchTaskFinished(int exitCode)
         break;
     case Task::DnsWrite:
         handleDnsWrite();
+        break;
+    case Task::ProxyRead:
+        handleProxyRead();
+        break;
+    case Task::ProxyWrite:
+        handleProxyWrite();
         break;
     case Task::FileLock:
         handleFileLock();
@@ -6461,6 +6510,273 @@ void MainWindow::handleDnsWrite()
     ui->btn_applyDnsRecommend->setVisible(!m_recommendedDns.isEmpty());
 }
 
+// ---------------------------------------------------------------- 系统代理
+
+void MainWindow::runProxyRead()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/proxy.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少系统代理脚本",
+                    "未找到 ps1\\proxy.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    if (!claimTask(QStringLiteral("读取系统代理")))
+        return;
+
+    ++m_flow;
+
+    appendLog("正在读取系统代理设置……");
+    ui->proxySummary->setText(QStringLiteral("正在读取……"));
+    for (QPushButton *button : proxyActionButtons(ui))
+        button->setEnabled(false);
+    ui->cardProxy->setVisible(true);
+
+    QScrollArea *page = ui->pageNetwork;
+    QTimer::singleShot(0, this, [page, this] {
+        page->ensureWidgetVisible(ui->cardProxy);
+    });
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), QStringLiteral("read")
+    };
+
+    m_task = Task::ProxyRead;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleProxyRead()
+{
+    QJsonObject data;
+    if (!parseProxyPayload(m_runner->collectedOutput(), &data)) {
+        appendLog("-------------------");
+        appendLog("读取系统代理失败：未能解析脚本输出。");
+        ui->proxySummary->setText(QStringLiteral("读取失败，请点「刷新状态」重试"));
+        ui->btn_proxyRefresh->setEnabled(true);
+        ui->btn_proxyOn->setEnabled(true);
+        ui->btn_proxyOff->setEnabled(false);
+        ui->btn_proxyRestore->setEnabled(false);
+        showMessage("读取系统代理失败",
+                    "未能解析 ps1\\proxy.ps1 的输出。请重试，或检查脚本是否完整。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    renderProxyState(data);
+}
+
+void MainWindow::renderProxyState(const QJsonObject &data)
+{
+    const bool enabled = data.value(QStringLiteral("enabled")).toBool();
+    const QString server = data.value(QStringLiteral("server")).toString();
+    const QString pac = data.value(QStringLiteral("pac")).toString();
+    const bool hasBackup = data.value(QStringLiteral("hasBackup")).toBool();
+
+    QString summary;
+    if (enabled) {
+        summary = server.isEmpty()
+                      ? QStringLiteral("已开启（未填写代理服务器）")
+                      : QStringLiteral("已开启 · %1").arg(server);
+    } else if (!pac.isEmpty()) {
+        summary = QStringLiteral("未启用手动代理，但启用了自动配置脚本（PAC）：%1")
+                      .arg(pac);
+    } else {
+        summary = QStringLiteral("未启用系统代理（直连）");
+    }
+
+    if (hasBackup) {
+        QString previous = data.value(QStringLiteral("backupServer")).toString();
+        if (previous.isEmpty())
+            previous = QStringLiteral("直连");
+        summary += QStringLiteral("\n上次设置已备份：%1 · %2")
+                       .arg(previous,
+                            data.value(QStringLiteral("backupTime")).toString());
+    }
+
+    if (!m_proxyPendingNotice.isEmpty()) {
+        summary.prepend(m_proxyPendingNotice + QLatin1Char('\n'));
+        m_proxyPendingNotice.clear();
+    }
+
+    ui->proxySummary->setText(summary);
+    if (enabled && !server.isEmpty() && ui->proxyServerInput->text().trimmed().isEmpty())
+        ui->proxyServerInput->setText(server);
+
+    ui->btn_proxyRefresh->setEnabled(true);
+    ui->btn_proxyOn->setEnabled(true);
+    ui->btn_proxyOff->setEnabled(enabled);
+    ui->btn_proxyRestore->setEnabled(hasBackup);
+
+    appendLog(summary.split(QLatin1Char('\n')).join(QStringLiteral("；")));
+}
+
+void MainWindow::writeProxy(const QString &action, const QString &server)
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/proxy.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少系统代理脚本",
+                    "未找到 ps1\\proxy.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    QString value = server.trimmed();
+    if (action == QLatin1String("apply")) {
+        static const QRegularExpression pattern(
+            QStringLiteral("^[A-Za-z0-9.\\-]+:[0-9]{1,5}$"));
+        const QRegularExpressionMatch match = pattern.match(value);
+        bool portOk = false;
+        if (match.hasMatch()) {
+            const int port = value.section(QLatin1Char(':'), -1).toInt(&portOk);
+            portOk = portOk && port >= 1 && port <= 65535;
+        }
+        if (!match.hasMatch() || !portOk) {
+            showMessage("代理地址格式不正确",
+                        "请按「主机:端口」填写，例如 127.0.0.1:7890。",
+                        QMessageBox::Warning);
+            ui->proxyServerInput->setFocus();
+            return;
+        }
+    }
+
+    QString confirmText;
+    if (action == QLatin1String("off")) {
+        confirmText = QStringLiteral("关闭后，使用系统代理的程序将改为直连。\n\n"
+                                     "当前设置会先备份，可通过「恢复上次代理」还原。");
+    } else if (action == QLatin1String("apply")) {
+        confirmText = QStringLiteral("将系统代理设为：%1\n\n"
+                                     "当前设置会先备份，可通过「恢复上次代理」还原。")
+                          .arg(value);
+    } else {
+        confirmText = QStringLiteral("将恢复到上一次保存的代理设置，当前设置会被覆盖。");
+    }
+
+    if (!confirmAction(action == QLatin1String("apply")
+                           ? QStringLiteral("启用系统代理")
+                           : (action == QLatin1String("off")
+                                  ? QStringLiteral("关闭系统代理")
+                                  : QStringLiteral("恢复上次代理")),
+                       confirmText, QMessageBox::Question))
+        return;
+
+    if (!claimTask(action == QLatin1String("off")
+                       ? QStringLiteral("关闭系统代理")
+                       : QStringLiteral("切换系统代理")))
+        return;
+
+    ++m_flow;
+
+    m_proxyAction = action;
+    appendLog(action == QLatin1String("off")
+                  ? "正在关闭系统代理……"
+                  : (action == QLatin1String("apply")
+                         ? QStringLiteral("正在启用系统代理 %1……").arg(value)
+                         : QStringLiteral("正在恢复上次的代理设置……")));
+
+    ui->proxySummary->setText(QStringLiteral("正在应用……"));
+    for (QPushButton *button : proxyActionButtons(ui))
+        button->setEnabled(false);
+
+    QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script,
+        QStringLiteral("-Action"), action
+    };
+    if (action == QLatin1String("apply"))
+        args << QStringLiteral("-Server") << value;
+
+    m_task = Task::ProxyWrite;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleProxyWrite()
+{
+    const QString action = m_proxyAction;
+    m_proxyAction.clear();
+
+    QJsonObject data;
+    if (!parseProxyPayload(m_runner->collectedOutput(), &data)) {
+        appendLog("-------------------");
+        appendLog("切换系统代理失败：未能解析脚本输出。");
+        ui->proxySummary->setText(QStringLiteral("切换失败，请点「刷新状态」确认当前设置"));
+        ui->btn_proxyRefresh->setEnabled(true);
+        ui->btn_proxyOn->setEnabled(true);
+        showMessage("切换系统代理失败",
+                    "未能解析脚本输出，无法确认设置是否生效。请点「刷新状态」核对。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QString code = data.value(QStringLiteral("code")).toString();
+    if (code == QLatin1String("off") || code == QLatin1String("applied")
+        || code == QLatin1String("restored")) {
+        QString label;
+        QString notice;
+        if (code == QLatin1String("off")) {
+            label = QStringLiteral("关闭系统代理");
+            notice = QStringLiteral("已关闭系统代理，原设置已备份。");
+        } else if (code == QLatin1String("applied")) {
+            label = QStringLiteral("启用系统代理");
+            notice = QStringLiteral("已启用系统代理：%1")
+                         .arg(data.value(QStringLiteral("server")).toString());
+        } else {
+            label = QStringLiteral("恢复上次代理");
+            notice = QStringLiteral("已恢复上次保存的代理设置。");
+        }
+
+        appendLog("-------------------");
+        appendLog(notice);
+        recordOperation(QStringLiteral("系统代理"), label,
+                        action == QLatin1String("apply")
+                            ? data.value(QStringLiteral("server")).toString()
+                            : label,
+                        true);
+
+        m_proxyPendingNotice = notice;
+        renderProxyState(data);
+        showMessage(label, notice + QStringLiteral("\n\n如需还原，点「恢复上次代理」。"));
+        return;
+    }
+
+    QString message;
+    if (code == QLatin1String("invalid-server")) {
+        message = QStringLiteral("代理地址格式不正确，请按「主机:端口」填写。");
+    } else if (code == QLatin1String("backup-failed")) {
+        message = QStringLiteral("备份当前代理设置失败，为避免无法回滚已中止操作。");
+    } else if (code == QLatin1String("no-backup")) {
+        message = QStringLiteral("还没有可恢复的代理备份，先关闭或切换一次代理就会自动备份。");
+    } else if (code == QLatin1String("restore-error")) {
+        message = QStringLiteral("恢复上次代理失败，可能是备份已损坏。");
+    } else if (code == QLatin1String("write-failed")) {
+        message = QStringLiteral("写入代理设置失败，可能被安全软件拦截。");
+    } else {
+        message = QStringLiteral("未能解析切换结果，请点「刷新状态」确认当前设置。");
+    }
+
+    appendLog("-------------------");
+    appendLog(message);
+    if (!code.isEmpty())
+        appendLog(QStringLiteral("（返回码：%1）").arg(code));
+
+    showMessage(QStringLiteral("切换系统代理失败"), message, QMessageBox::Warning);
+    ui->proxySummary->setText(message);
+    ui->btn_proxyRefresh->setEnabled(true);
+    ui->btn_proxyOn->setEnabled(true);
+    ui->btn_proxyOff->setEnabled(data.value(QStringLiteral("enabled")).toBool());
+    ui->btn_proxyRestore->setEnabled(data.value(QStringLiteral("hasBackup")).toBool());
+}
+
 // ---------------------------------------------------------------- 实时监控
 
 void MainWindow::runMonitor()
@@ -7235,6 +7551,15 @@ void MainWindow::hideBusyHint()
 void MainWindow::showMessage(const QString &title, const QString &text,
                              QMessageBox::Icon icon)
 {
+    // 后台任务完成时用户可能正开着别的对话框；此时直接弹会叠在一起。
+    // 先等当前模态框关闭，再显示本条提示。
+    if (QApplication::activeModalWidget()) {
+        QTimer::singleShot(300, this, [this, title, text, icon] {
+            showMessage(title, text, icon);
+        });
+        return;
+    }
+
     QMessageBox box(icon, title, text, QMessageBox::Ok, this);
     box.setWindowIcon(windowIcon());
     box.exec();
@@ -8459,6 +8784,8 @@ QString MainWindow::currentTaskLabel() const
     case Task::HostsWrite:      return QStringLiteral("修改 Hosts");
     case Task::DnsRead:         return QStringLiteral("读取 DNS 设置");
     case Task::DnsWrite:        return QStringLiteral("切换 DNS");
+    case Task::ProxyRead:       return QStringLiteral("读取系统代理");
+    case Task::ProxyWrite:      return QStringLiteral("切换系统代理");
     case Task::SfcRepair:       return QStringLiteral("系统文件检查");
     case Task::WUpdateRepair:   return QStringLiteral("重置更新组件");
     case Task::SxsCleanup:      return QStringLiteral("清理更新组件");
@@ -8494,6 +8821,13 @@ bool MainWindow::claimTask(const QString &nextLabel)
 
     if (m_task == Task::None)
         return true;
+
+    // 已经有一个对话框开着时不再叠一个“还有任务正在运行”，避免弹窗互相遮挡。
+    if (QApplication::activeModalWidget()) {
+        appendLog(QStringLiteral("「%1」还在运行，请先关闭当前对话框再操作。")
+                      .arg(currentTaskLabel()));
+        return false;
+    }
 
     QMessageBox box(this);
     box.setWindowTitle(QStringLiteral("还有任务正在运行"));
@@ -8677,6 +9011,7 @@ bool MainWindow::backgroundResultViewable(Task task) const
     case Task::DriverList:
     case Task::HostsRead:
     case Task::DnsRead:
+    case Task::ProxyRead:
     case Task::FileLock:
     case Task::FileVerify:
     case Task::BootTime:
@@ -8704,6 +9039,8 @@ int MainWindow::pageForTask(Task task) const
     case Task::PortsList:
     case Task::HostsRead:
     case Task::DnsRead:
+    case Task::ProxyRead:
+    case Task::ProxyWrite:
         return 1;
     case Task::Cleaner:
     case Task::WinsockReset:

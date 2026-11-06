@@ -332,6 +332,15 @@ def test_log_output(exe, shot_dir):
         check("恢复上次 DNS 按钮存在",
               uia_exists(proc.pid, "btn_restoreDns"))
 
+        # 系统代理卡片：只读取当前设置，不会修改系统配置
+        opened, detail = uia_click_retry(proc.pid, "btn_proxy")
+        check("打开系统代理卡片", opened, detail)
+        time.sleep(2)
+        check("系统代理状态已渲染",
+              uia_exists(proc.pid, "proxySummary"))
+        check("系统代理操作按钮存在",
+              uia_exists(proc.pid, "btn_proxyOff"))
+
         shot = os.path.join(shot_dir, "uitest_ping.png")
         if capture(hwnd, shot):
             check("抓取日志截图", True, shot)

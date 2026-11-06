@@ -124,7 +124,7 @@
 }
 
 #cardOverview, #cardOverviewScore, #cardNetwork, #cardAdvanced,
-#cardPorts, #cardHosts, #cardDns, #cardSystem, #cardHealth,
+#cardPorts, #cardHosts, #cardDns, #cardProxy, #cardSystem, #cardHealth,
 #cardSfc, #cardWUpdate, #cardHardware, #cardHwinfo, #cardDiskHealth,
 #cardMonitor, #cardBattery, #cardManage, #cardStartup, #cardProcesses,
 #cardUninstall, #cardDrivers, #cardTools, #cardLargeFiles,
@@ -145,7 +145,7 @@
 
 #cardTitleOverview, #cardTitleScore, #cardTitleNet, #cardTitleAdv,
 #cardTitleSys, #cardTitleHardware, #cardTitleManage, #cardTitleTools,
-#healthTitle, #portsTitle, #hostsTitle, #dnsTitle, #sfcTitle, #wupdateTitle,
+#healthTitle, #portsTitle, #hostsTitle, #dnsTitle, #proxyTitle, #sfcTitle, #wupdateTitle,
 #hwinfoTitle, #diskHealthTitle, #monitorTitle, #batteryTitle,
 #startupTitle, #processesTitle, #uninstallTitle, #driversTitle,
 #largeFilesTitle, #diskUsageTitle, #treemapTitle, #dupTitle,
@@ -342,7 +342,8 @@
 
 #startupSummary, #portsSummary, #largeFilesSummary, #diskHealthSummary,
 #hwinfoSummary, #processesSummary, #diskUsageSummary, #uninstallSummary,
-#driversSummary, #hostsSummary, #dnsSummary, #dnsSpeedResult, #monitorSummary,
+#driversSummary, #hostsSummary, #dnsSummary, #dnsSpeedResult, #proxySummary,
+#proxyHint, #monitorSummary,
 #batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
 #fileLockSummary, #fakeCheckSummary, #fakeCheckCompare, #sfcSummary, #wupdateSummary,
 #treemapSummary, #restoreSummary, #operationsSummary, #netDiagSummary,
@@ -667,7 +668,8 @@
 
 /* ---------------- DNS 切换 ---------------- */
 #dnsAutoBtn, #dnsAliBtn, #dnsTencentBtn, #dns114Btn, #dnsGoogleBtn, #dnsBaiduBtn,
-#btn_applyDnsRecommend, #btn_restoreDns {
+#btn_applyDnsRecommend, #btn_restoreDns,
+#btn_proxyOn, #btn_proxyOff, #btn_proxyRefresh, #btn_proxyRestore {
     background: #F4F6FA;
     border: 1px solid #E1E6EF;
     border-radius: 8px;
@@ -677,19 +679,25 @@
 }
 #dnsAutoBtn:hover, #dnsAliBtn:hover, #dnsTencentBtn:hover,
 #dns114Btn:hover, #dnsGoogleBtn:hover, #dnsBaiduBtn:hover,
-#btn_applyDnsRecommend:hover, #btn_restoreDns:hover {
+#btn_applyDnsRecommend:hover, #btn_restoreDns:hover,
+#btn_proxyOn:hover, #btn_proxyOff:hover, #btn_proxyRefresh:hover,
+#btn_proxyRestore:hover {
     background: #EAF1FE;
     border-color: #C3D7F8;
     color: #2B6CD4;
 }
 #dnsAutoBtn:pressed, #dnsAliBtn:pressed, #dnsTencentBtn:pressed,
 #dns114Btn:pressed, #dnsGoogleBtn:pressed, #dnsBaiduBtn:pressed,
-#btn_applyDnsRecommend:pressed, #btn_restoreDns:pressed {
+#btn_applyDnsRecommend:pressed, #btn_restoreDns:pressed,
+#btn_proxyOn:pressed, #btn_proxyOff:pressed, #btn_proxyRefresh:pressed,
+#btn_proxyRestore:pressed {
     background: #E1EAFB;
 }
 #dnsAutoBtn:disabled, #dnsAliBtn:disabled, #dnsTencentBtn:disabled,
 #dns114Btn:disabled, #dnsGoogleBtn:disabled, #dnsBaiduBtn:disabled,
-#btn_applyDnsRecommend:disabled, #btn_restoreDns:disabled {
+#btn_applyDnsRecommend:disabled, #btn_restoreDns:disabled,
+#btn_proxyOn:disabled, #btn_proxyOff:disabled, #btn_proxyRefresh:disabled,
+#btn_proxyRestore:disabled {
     color: #B6BFCC;
 }
 

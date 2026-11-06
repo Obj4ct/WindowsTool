@@ -78,6 +78,8 @@ private:
         HostsWrite,      ///< 写入/恢复 Hosts（hosts.ps1 -Action save/restore）
         DnsRead,         ///< 读取当前网卡 DNS（dns.ps1 -Action read）
         DnsWrite,        ///< 切换 DNS（dns.ps1 -Action apply）
+        ProxyRead,       ///< 读取系统代理（proxy.ps1 -Action read）
+        ProxyWrite,      ///< 开关系统代理（proxy.ps1 -Action off/apply/restore）
         FileLock,        ///< 查询文件被哪个进程占用（filelock.ps1）
         FileVerify,      ///< 检查文件是否被伪装（fakecheck.ps1）
         BootTime,        ///< 开机耗时分析（boottime.ps1）
@@ -260,6 +262,13 @@ private:
     void runDnsWrite(const QString &servers, const QString &action);
     void handleDnsWrite();
 
+    // 系统代理开关（备份后可恢复）
+    void runProxyRead();
+    void handleProxyRead();
+    void writeProxy(const QString &action, const QString &server = QString());
+    void handleProxyWrite();
+    void renderProxyState(const QJsonObject &data);
+
     // 实时监控
     void runMonitor();
     void stopMonitor();
@@ -353,6 +362,10 @@ private:
 
     /** 当前 DNS 写任务是否为「恢复上次 DNS」 */
     bool m_dnsRestoreMode = false;
+
+    /** 系统代理：写操作类型（off/apply/restore）与写后待展示的提示 */
+    QString m_proxyAction;
+    QString m_proxyPendingNotice;
 
     /** DNS 测速的独立探测器，避免与分层诊断的探测互相取消 */
     DnsProbe::AsyncRunner *m_dnsSpeedRunner = nullptr;
