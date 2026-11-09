@@ -26,7 +26,12 @@
 #include <QEasingCurve>
 #include <QFile>
 #include <QFileDialog>
+#include <QCheckBox>
+#include <QComboBox>
 #include <QFileInfo>
+#include <QMenu>
+#include <QSettings>
+#include <QSystemTrayIcon>
 #include <QFrame>
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsOpacityEffect>
@@ -488,6 +493,8 @@ MainWindow::MainWindow(QWidget *parent)
     // 每次任务可能换用新的 ProcessRunner（后台运行的旧任务仍持有旧的），
     // 连接逻辑集中在这里，避免每处都重复接线
     m_runner = createRunner();
+
+    setupDiagSchedule();
 }
 
 ProcessRunner *MainWindow::createRunner()
@@ -1539,13 +1546,16 @@ void MainWindow::onTaskFailed(const QString &reason)
  */
 void MainWindow::startAutoCheck()
 {
-    if (!claimTask(QStringLiteral("一键自动检测")))
+    if (!claimTask(QStringLiteral("一键自动检测"))) {
+        m_silentDiag = false;
         return;
+    }
 
     ++m_flow;
 
-    clearLog();
-    appendLog("正在分层诊断网络，稍等片刻……");
+    if (!m_silentDiag)
+        clearLog();
+    appendLog(m_silentDiag ? "定时巡检开始……" : "正在分层诊断网络，稍等片刻……");
 
     clearDiagRows();
     m_diagSiteResults.clear();
@@ -1560,6 +1570,13 @@ void MainWindow::startAutoCheck()
     const QString script = QDir(QCoreApplication::applicationDirPath())
                                .filePath(QStringLiteral("ps1/netdiag.ps1"));
     if (!QFileInfo::exists(script)) {
+        if (m_silentDiag) {
+            m_silentDiag = false;
+            appendLog("定时巡检跳过：未找到 ps1\\netdiag.ps1。");
+            showTrayNotification(QStringLiteral("定时巡检无法执行"),
+                                 QStringLiteral("未找到 ps1\\netdiag.ps1，请确认程序目录完整。"));
+            return;
+        }
         appendLog("未找到 ps1\\netdiag.ps1，改用传统检测……");
         startLegacyAutoCheck();
         return;
@@ -1849,6 +1866,25 @@ void MainWindow::completeDiagnosis(const NetProbe::Outcome &outcome)
         if (item.status == NetDiag::Status::Skip)
             continue;
         appendLog(QStringLiteral("%1：%2").arg(item.name, item.detail));
+    }
+
+    // 定时巡检不弹窗、不自动修复，只在发现异常时发桌面通知
+    if (m_silentDiag) {
+        m_silentDiag = false;
+        if (result.hasFailure) {
+            appendLog("定时巡检发现异常，已发送桌面通知。");
+            showTrayNotification(
+                QStringLiteral("网络巡检发现异常"),
+                QStringLiteral("%1\n\n建议：%2").arg(result.summary, result.suggestion));
+        } else if (hasSiteItem && siteItem.status == NetDiag::Status::Warn) {
+            appendLog("定时巡检完成：部分站点无法访问。");
+            showTrayNotification(QStringLiteral("部分站点无法访问"),
+                                 QStringLiteral("%1\n\n建议：%2")
+                                     .arg(result.summary, result.suggestion));
+        } else {
+            appendLog("定时巡检通过：网络各层检查正常。");
+        }
+        return;
     }
 
     if (!result.hasFailure) {
@@ -6775,6 +6811,152 @@ void MainWindow::handleProxyWrite()
     ui->btn_proxyOn->setEnabled(true);
     ui->btn_proxyOff->setEnabled(data.value(QStringLiteral("enabled")).toBool());
     ui->btn_proxyRestore->setEnabled(data.value(QStringLiteral("hasBackup")).toBool());
+}
+
+// ---------------------------------------------------------------- 定时巡检
+
+QString MainWindow::settingsFilePath() const
+{
+    const QString dir = QStandardPaths::writableLocation(
+        QStandardPaths::AppLocalDataLocation);
+    QDir().mkpath(dir);
+    return QDir(dir).filePath(QStringLiteral("settings.ini"));
+}
+
+void MainWindow::setupDiagSchedule()
+{
+    m_diagTimer = new QTimer(this);
+    m_diagTimer->setTimerType(Qt::CoarseTimer);
+    connect(m_diagTimer, &QTimer::timeout,
+            this, &MainWindow::runScheduledDiagnosis);
+
+    connect(ui->chk_diagSchedule, &QCheckBox::toggled,
+            this, &MainWindow::setDiagScheduleEnabled);
+
+    connect(ui->combo_diagInterval,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int index) {
+                m_diagIntervalMinutes = index == 0 ? 10 : (index == 2 ? 60 : 30);
+                QSettings settings(settingsFilePath(), QSettings::IniFormat);
+                settings.setValue(QStringLiteral("diag/scheduleInterval"),
+                                  m_diagIntervalMinutes);
+
+                if (m_diagTimer->isActive()) {
+                    m_diagTimer->start(m_diagIntervalMinutes * 60 * 1000);
+                }
+                updateDiagScheduleStatus();
+            });
+
+    QSettings settings(settingsFilePath(), QSettings::IniFormat);
+    const int stored = settings.value(QStringLiteral("diag/scheduleInterval"), 30).toInt();
+    m_diagIntervalMinutes = stored == 10 ? 10 : (stored == 60 ? 60 : 30);
+    ui->combo_diagInterval->setCurrentIndex(
+        m_diagIntervalMinutes == 10 ? 0 : (m_diagIntervalMinutes == 60 ? 2 : 1));
+
+    const bool enabled =
+        settings.value(QStringLiteral("diag/scheduleEnabled"), false).toBool();
+    ui->chk_diagSchedule->setChecked(enabled);
+    // setChecked 会触发 toggled；这里再调用一次保证首次启动也建立托盘与定时器
+    setDiagScheduleEnabled(enabled);
+    updateDiagScheduleStatus();
+}
+
+void MainWindow::setDiagScheduleEnabled(bool enabled)
+{
+    QSettings settings(settingsFilePath(), QSettings::IniFormat);
+    settings.setValue(QStringLiteral("diag/scheduleEnabled"), enabled);
+
+    if (enabled) {
+        if (!m_diagTimer->isActive())
+            m_diagTimer->start(m_diagIntervalMinutes * 60 * 1000);
+
+        if (!m_trayIcon) {
+            m_trayIcon = new QSystemTrayIcon(windowIcon(), this);
+            m_trayIcon->setToolTip(QStringLiteral("WindowsTool 定时巡检"));
+
+            QMenu *menu = new QMenu(this);
+            QAction *openAction = menu->addAction(QStringLiteral("打开主界面"));
+            connect(openAction, &QAction::triggered, this, [this] {
+                showNormal();
+                raise();
+                activateWindow();
+            });
+            QAction *stopAction = menu->addAction(QStringLiteral("停止定时巡检"));
+            connect(stopAction, &QAction::triggered, this, [this] {
+                ui->chk_diagSchedule->setChecked(false);
+            });
+            m_trayIcon->setContextMenu(menu);
+
+            connect(m_trayIcon, &QSystemTrayIcon::activated, this,
+                    [this](QSystemTrayIcon::ActivationReason reason) {
+                        if (reason == QSystemTrayIcon::Trigger
+                            || reason == QSystemTrayIcon::DoubleClick) {
+                            showNormal();
+                            raise();
+                            activateWindow();
+                        }
+                    });
+            connect(m_trayIcon, &QSystemTrayIcon::messageClicked, this, [this] {
+                showNormal();
+                raise();
+                activateWindow();
+            });
+        }
+
+        if (QSystemTrayIcon::isSystemTrayAvailable())
+            m_trayIcon->show();
+    } else {
+        m_diagTimer->stop();
+        if (m_trayIcon)
+            m_trayIcon->hide();
+    }
+
+    updateDiagScheduleStatus();
+}
+
+void MainWindow::updateDiagScheduleStatus()
+{
+    if (!m_diagTimer || !m_diagTimer->isActive()) {
+        ui->diagScheduleStatus->setText(
+            QStringLiteral("未开启（仅在程序运行时生效）"));
+        return;
+    }
+
+    const int remain = m_diagTimer->remainingTime();
+    const QString next =
+        remain > 0
+            ? QDateTime::currentDateTime().addMSecs(remain)
+                  .toString(QStringLiteral("HH:mm"))
+            : QStringLiteral("即将开始");
+    ui->diagScheduleStatus->setText(
+        QStringLiteral("已开启 · 每 %1 分钟巡检 · 下次 %2")
+            .arg(QString::number(m_diagIntervalMinutes), next));
+}
+
+void MainWindow::runScheduledDiagnosis()
+{
+    updateDiagScheduleStatus();
+
+    if (m_task != Task::None) {
+        appendLog(QStringLiteral("定时巡检：上一个任务还在运行，本轮跳过。"));
+        return;
+    }
+
+    appendLog("-------------------");
+    m_silentDiag = true;
+    startAutoCheck();
+}
+
+void MainWindow::showTrayNotification(const QString &title, const QString &body)
+{
+    if (m_trayIcon && m_trayIcon->isVisible()
+        && QSystemTrayIcon::supportsMessages()) {
+        m_trayIcon->showMessage(title, body, QSystemTrayIcon::Information, 10000);
+        return;
+    }
+
+    // 托盘不可用时的兜底：仍然让用户看到巡检结论
+    showMessage(title, body, QMessageBox::Warning);
 }
 
 // ---------------------------------------------------------------- 实时监控

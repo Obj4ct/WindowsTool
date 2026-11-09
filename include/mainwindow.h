@@ -25,6 +25,8 @@ QT_END_NAMESPACE
 class ProcessRunner;
 class QToolButton;
 class QTimer;
+class QSettings;
+class QSystemTrayIcon;
 class QDialog;
 class QVBoxLayout;
 class SysMonitor;
@@ -132,6 +134,14 @@ private:
     void exportDiagReport();
     void clearDiagRows();
     void addDiagRow(const NetDiag::CheckItem &item);
+
+    // 定时巡检（仅在程序运行时生效）
+    void setupDiagSchedule();
+    void setDiagScheduleEnabled(bool enabled);
+    void updateDiagScheduleStatus();
+    void runScheduledDiagnosis();
+    void showTrayNotification(const QString &title, const QString &body);
+    QString settingsFilePath() const;
 
     // 诊断历史（F12）
     void loadDiagHistory();
@@ -547,6 +557,12 @@ private:
         NetDiag::DiagResult result;
     };
     QVector<DiagHistoryEntry> m_diagHistory;
+
+    /** 定时巡检：定时器、托盘通知、静默模式与间隔（分钟） */
+    QTimer *m_diagTimer = nullptr;
+    QSystemTrayIcon *m_trayIcon = nullptr;
+    bool m_silentDiag = false;
+    int m_diagIntervalMinutes = 30;
 };
 
 #endif // MAINWINDOW_H

@@ -1157,6 +1157,68 @@
                   </widget>
                  </item>
                  <item>
+                  <layout class="QHBoxLayout" name="netDiagScheduleRow">
+                   <property name="spacing">
+                    <number>8</number>
+                   </property>
+                   <item>
+                    <widget class="QCheckBox" name="chk_diagSchedule">
+                     <property name="text">
+                      <string>定时巡检</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QComboBox" name="combo_diagInterval">
+                     <property name="minimumSize">
+                      <size>
+                       <width>96</width>
+                       <height>0</height>
+                      </size>
+                     </property>
+                     <item>
+                      <property name="text">
+                       <string>每 10 分钟</string>
+                      </property>
+                     </item>
+                     <item>
+                      <property name="text">
+                       <string>每 30 分钟</string>
+                      </property>
+                     </item>
+                     <item>
+                      <property name="text">
+                       <string>每 60 分钟</string>
+                      </property>
+                     </item>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QLabel" name="diagScheduleStatus">
+                     <property name="text">
+                      <string>未开启（仅在程序运行时生效）</string>
+                     </property>
+                     <property name="wordWrap">
+                      <bool>true</bool>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <spacer name="diagScheduleSpacer">
+                     <property name="orientation">
+                      <enum>Qt::Horizontal</enum>
+                     </property>
+                     <property name="sizeHint" stdset="0">
+                      <size>
+                       <width>40</width>
+                       <height>20</height>
+                      </size>
+                     </property>
+                    </spacer>
+                   </item>
+                  </layout>
+                 </item>
+                 <item>
                   <layout class="QHBoxLayout" name="netDiagActionRow">
                    <property name="spacing">
                     <number>8</number>

@@ -343,7 +343,7 @@
 #startupSummary, #portsSummary, #largeFilesSummary, #diskHealthSummary,
 #hwinfoSummary, #processesSummary, #diskUsageSummary, #uninstallSummary,
 #driversSummary, #hostsSummary, #dnsSummary, #dnsSpeedResult, #proxySummary,
-#proxyHint, #monitorSummary,
+#proxyHint, #diagScheduleStatus, #monitorSummary,
 #batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
 #fileLockSummary, #fakeCheckSummary, #fakeCheckCompare, #sfcSummary, #wupdateSummary,
 #treemapSummary, #restoreSummary, #operationsSummary, #netDiagSummary,

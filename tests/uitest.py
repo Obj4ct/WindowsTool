@@ -305,7 +305,7 @@ def test_log_output(exe, shot_dir):
         time.sleep(0.5)
         started, detail = uia_click_retry(proc.pid, "btn_autoCheck")
         check("点击「一键检测修复」", started, detail)
-        time.sleep(8)
+        time.sleep(2)
 
         user32.SetCursorPos(2000, 2000)
         time.sleep(0.4)
@@ -316,10 +316,10 @@ def test_log_output(exe, shot_dir):
         check("诊断报告导出按钮存在",
               uia_exists(proc.pid, "btn_exportDiagReport"))
         check("诊断结果已逐层渲染",
-              uia_exists_name_contains(proc.pid, "域名解析"),
+              wait_uia_name_contains(proc.pid, "域名解析"),
               "未找到 DNS 解析这一行")
         check("目标连通性行存在",
-              uia_exists_name_contains(proc.pid, "目标连通性"),
+              wait_uia_name_contains(proc.pid, "目标连通性"),
               "未找到多目标检测这一行")
         check("诊断历史卡片存在",
               uia_exists(proc.pid, "diagHistorySummary"),
@@ -340,6 +340,11 @@ def test_log_output(exe, shot_dir):
               uia_exists(proc.pid, "proxySummary"))
         check("系统代理操作按钮存在",
               uia_exists(proc.pid, "btn_proxyOff"))
+
+        check("定时巡检开关存在",
+              uia_exists(proc.pid, "chk_diagSchedule"))
+        check("定时巡检间隔选择存在",
+              uia_exists(proc.pid, "combo_diagInterval"))
 
         shot = os.path.join(shot_dir, "uitest_ping.png")
         if capture(hwnd, shot):
@@ -675,6 +680,16 @@ def uia_exists_name_contains(pid, fragment):
     r = subprocess.run(["powershell", "-NoProfile", "-Command", script],
                        capture_output=True, text=True, timeout=40)
     return "FOUND" in r.stdout
+
+
+def wait_uia_name_contains(pid, fragment, timeout=20.0, interval=1.0):
+    """轮询等待某段文本出现，避免用固定 sleep 猜诊断耗时"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if uia_exists_name_contains(pid, fragment):
+            return True
+        time.sleep(interval)
+    return False
 
 
 def test_task_concurrency(exe, shot_dir):
