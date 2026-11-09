@@ -2137,17 +2137,26 @@
                     </widget>
                    </item>
                    <item>
-                    <spacer name="sysThirdSpacerA">
-                     <property name="orientation">
-                      <enum>Qt::Horizontal</enum>
+                    <widget class="QToolButton" name="btn_bsod">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                       <horstretch>1</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
                      </property>
-                     <property name="sizeHint" stdset="0">
+                     <property name="minimumSize">
                       <size>
-                       <width>40</width>
-                       <height>20</height>
+                       <width>0</width>
+                       <height>92</height>
                       </size>
                      </property>
-                    </spacer>
+                     <property name="toolButtonStyle">
+                      <enum>Qt::ToolButtonTextUnderIcon</enum>
+                     </property>
+                     <property name="text">
+                      <string>蓝屏原因</string>
+                     </property>
+                    </widget>
                    </item>
                    <item>
                     <spacer name="sysThirdSpacerB">
@@ -2600,6 +2609,94 @@
                     </spacer>
                    </item>
                   </layout>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QFrame" name="cardBsod">
+                <property name="visible">
+                 <bool>false</bool>
+                </property>
+                <property name="frameShape">
+                 <enum>QFrame::NoFrame</enum>
+                </property>
+                <layout class="QVBoxLayout" name="bsodLayout">
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="leftMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>14</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>18</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>14</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="bsodTitle">
+                   <property name="text">
+                    <string>蓝屏原因（简化分析）</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="bsodSummary">
+                   <property name="text">
+                    <string>正在读取……</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QScrollArea" name="bsodScroll">
+                   <property name="minimumSize">
+                    <size>
+                     <width>0</width>
+                     <height>200</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16777215</width>
+                     <height>200</height>
+                    </size>
+                   </property>
+                   <property name="frameShape">
+                    <enum>QFrame::NoFrame</enum>
+                   </property>
+                   <property name="horizontalScrollBarPolicy">
+                    <enum>Qt::ScrollBarAlwaysOff</enum>
+                   </property>
+                   <property name="widgetResizable">
+                    <bool>true</bool>
+                   </property>
+                   <widget class="QWidget" name="bsodRows">
+                    <layout class="QVBoxLayout" name="bsodRowsLayout">
+                     <property name="spacing">
+                      <number>8</number>
+                     </property>
+                     <property name="leftMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="topMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="rightMargin">
+                      <number>0</number>
+                     </property>
+                     <property name="bottomMargin">
+                      <number>0</number>
+                     </property>
+                    </layout>
+                   </widget>
+                  </widget>
                  </item>
                 </layout>
                </widget>

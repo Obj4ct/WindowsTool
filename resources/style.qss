@@ -345,6 +345,7 @@
 #driversSummary, #hostsSummary, #dnsSummary, #dnsSpeedResult, #proxySummary,
 #proxyHint, #diagScheduleStatus, #monitorSummary,
 #batterySummary, #dupSummary, #contextMenuSummary, #bootTimeSummary,
+#bsodSummary,
 #fileLockSummary, #fakeCheckSummary, #fakeCheckCompare, #sfcSummary, #wupdateSummary,
 #treemapSummary, #restoreSummary, #operationsSummary, #netDiagSummary,
 #diagHistorySummary {
@@ -372,6 +373,15 @@
 }
 #restoreSummary[state="warn"] {
     color: #B7791F;
+}
+#bsodSummary[state="ok"] {
+    color: #1F8A4C;
+}
+#bsodSummary[state="warn"] {
+    color: #B7791F;
+}
+#bsodSummary[state="risk"] {
+    color: #C0392B;
 }
 
 /* 行内小标签 */

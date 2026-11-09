@@ -85,6 +85,7 @@ private:
         FileLock,        ///< 查询文件被哪个进程占用（filelock.ps1）
         FileVerify,      ///< 检查文件是否被伪装（fakecheck.ps1）
         BootTime,        ///< 开机耗时分析（boottime.ps1）
+        Bsod,            ///< 蓝屏记录简化分析（bsod.ps1）
         ContextMenuList, ///< 右键菜单项枚举（contextmenu.ps1 list）
         ContextMenuToggle, ///< 禁用/启用右键菜单项（contextmenu.ps1 disable/enable）
         StartupToggle,   ///< 禁用/启用开机启动项（startupToggle.ps1）
@@ -298,6 +299,12 @@ private:
     void runBootTime();
     void handleBootTime();
     void addBootRow(const QString &badge, const QString &title,
+                    const QString &detail);
+
+    // 蓝屏记录简化分析（只读）
+    void runBsodAnalysis();
+    void handleBsodAnalysis();
+    void addBsodRow(const QString &badge, const QString &title,
                     const QString &detail);
 
     // 文件占用查询（只读）

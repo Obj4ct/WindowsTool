@@ -238,6 +238,72 @@ QString batteryStatusLabel(int status)
     }
 }
 
+/** BugCheck 错误码 → 中文含义与排查建议（未收录的给出通用指引） */
+void bugcheckInfo(const QString &code, QString *name, QString *advice)
+{
+    if (code == QLatin1String("0x0000000A")) {
+        *name = QStringLiteral("驱动在错误的中断级别访问内存");
+        *advice = QStringLiteral("多为驱动冲突或内存条不稳定，可先更新/回退最近安装的驱动。");
+    } else if (code == QLatin1String("0x0000001E")) {
+        *name = QStringLiteral("内核模式异常未处理");
+        *advice = QStringLiteral("常见于驱动或系统文件损坏，可运行「修复系统文件」。");
+    } else if (code == QLatin1String("0x00000024")) {
+        *name = QStringLiteral("NTFS 文件系统错误");
+        *advice = QStringLiteral("检查硬盘健康与数据线，并运行磁盘检查（chkdsk）。");
+    } else if (code == QLatin1String("0x0000003B")) {
+        *name = QStringLiteral("系统服务异常");
+        *advice = QStringLiteral("多见于显卡驱动或系统文件问题，可更新显卡驱动。");
+    } else if (code == QLatin1String("0x00000050")) {
+        *name = QStringLiteral("访问了无效的内存地址");
+        *advice = QStringLiteral("可能是内存条、驱动或磁盘故障，建议先检测内存与硬盘。");
+    } else if (code == QLatin1String("0x0000007B")) {
+        *name = QStringLiteral("启动盘无法访问");
+        *advice = QStringLiteral("存储控制器驱动或磁盘连接异常，可在 BIOS 中确认硬盘模式。");
+    } else if (code == QLatin1String("0x0000007E")) {
+        *name = QStringLiteral("系统线程异常未处理");
+        *advice = QStringLiteral("多为驱动或系统文件问题，可更新驱动并运行系统文件修复。");
+    } else if (code == QLatin1String("0x0000009F")) {
+        *name = QStringLiteral("驱动电源状态切换失败");
+        *advice = QStringLiteral("与睡眠/唤醒或驱动有关，可先更新主板与网卡驱动。");
+    } else if (code == QLatin1String("0x000000BE")) {
+        *name = QStringLiteral("驱动试图写入只读内存");
+        *advice = QStringLiteral("通常由驱动缺陷引起，建议更新或卸载最近安装的驱动。");
+    } else if (code == QLatin1String("0x000000C2")) {
+        *name = QStringLiteral("内存池调用错误");
+        *advice = QStringLiteral("多与驱动有关，可先排查最近安装的驱动或安全软件。");
+    } else if (code == QLatin1String("0x000000D1")) {
+        *name = QStringLiteral("驱动在错误的中断级别访问内存");
+        *advice = QStringLiteral("常见于网卡/显卡驱动，建议更新或回退对应驱动。");
+    } else if (code == QLatin1String("0x000000EF")) {
+        *name = QStringLiteral("关键系统进程崩溃");
+        *advice = QStringLiteral("系统文件可能损坏，建议运行「修复系统文件」并做安全扫描。");
+    } else if (code == QLatin1String("0x00000101")) {
+        *name = QStringLiteral("CPU 时钟中断异常");
+        *advice = QStringLiteral("可能与超频、CPU 或主板供电有关，可先恢复默认频率。");
+    } else if (code == QLatin1String("0x00000124")) {
+        *name = QStringLiteral("硬件报告了不可纠正的错误");
+        *advice = QStringLiteral("多为 CPU/内存/供电或散热问题，建议检查散热与硬件状态。");
+    } else if (code == QLatin1String("0x00000133")) {
+        *name = QStringLiteral("DPC 看门狗超时");
+        *advice = QStringLiteral("常见于存储驱动或固件问题，可更新芯片组与 SSD 固件。");
+    } else if (code == QLatin1String("0x00000139")) {
+        *name = QStringLiteral("内核安全检查失败");
+        *advice = QStringLiteral("驱动或系统文件损坏，建议更新驱动并运行系统文件修复。");
+    } else if (code == QLatin1String("0x00000154")) {
+        *name = QStringLiteral("存储异常");
+        *advice = QStringLiteral("可能与磁盘或内存有关，建议检测硬盘健康与内存。");
+    } else if (code == QLatin1String("0xC000021A")) {
+        *name = QStringLiteral("关键用户模式进程终止");
+        *advice = QStringLiteral("系统文件损坏或被篡改，建议运行系统文件修复并做安全扫描。");
+    } else if (code == QLatin1String("0x000000ED")) {
+        *name = QStringLiteral("启动卷无法挂载");
+        *advice = QStringLiteral("文件系统或磁盘可能损坏，建议用 chkdsk 检查启动盘。");
+    } else {
+        *name = QStringLiteral("未能识别的错误码");
+        *advice = QStringLiteral("可搜索该错误码，或检查最近安装的驱动、硬件与系统更新。");
+    }
+}
+
 /** fixdns.ps1 的错误代码 → 中文提示 */
 QString fixDnsErrorLabel(const QString &code)
 {
@@ -516,6 +582,7 @@ ProcessRunner *MainWindow::createRunner()
                     || m_task == Task::HostsRead || m_task == Task::HostsWrite
                     || m_task == Task::DnsRead || m_task == Task::DnsWrite
                     || m_task == Task::FileLock || m_task == Task::BootTime
+                    || m_task == Task::Bsod
                     || m_task == Task::ContextMenuList
                     || m_task == Task::ContextMenuToggle
                     || m_task == Task::StartupToggle
@@ -645,6 +712,7 @@ void MainWindow::setupTheme()
     ui->btn_wupdate->setIcon(tileIcon(UiIcons::Icon::Refresh));
     ui->btn_sxsClean->setIcon(tileIcon(UiIcons::Icon::Clean));
     ui->btn_restore->setIcon(tileIcon(UiIcons::Icon::Reset));
+    ui->btn_bsod->setIcon(tileIcon(UiIcons::Icon::Health));
 
     // 硬件监控
     ui->btn_diskHealth->setIcon(tileIcon(UiIcons::Icon::DiskPulse));
@@ -679,6 +747,7 @@ void MainWindow::setupTheme()
                             ui->btn_healthCheck, ui->btn_sfc,
                             ui->btn_wupdate,
                             ui->btn_sxsClean, ui->btn_restore,
+                            ui->btn_bsod,
                             ui->btn_diskHealth, ui->btn_hwinfo,
                             ui->btn_battery, ui->btn_monitor,
                             ui->btn_startup, ui->btn_process,
@@ -1424,6 +1493,9 @@ void MainWindow::dispatchTaskFinished(int exitCode)
         break;
     case Task::BootTime:
         handleBootTime();
+        break;
+    case Task::Bsod:
+        handleBsodAnalysis();
         break;
     case Task::ContextMenuList:
         handleContextMenuList();
@@ -2622,6 +2694,7 @@ void MainWindow::setupSystem()
         }
         runRestorePointList();
     });
+
     connect(ui->restoreCreateBtn, &QPushButton::clicked,
             this, &MainWindow::runRestorePointCreate);
     connect(ui->restoreOpenBtn, &QPushButton::clicked, this, [this]() {
@@ -2641,6 +2714,11 @@ void MainWindow::setupSystem()
                         QMessageBox::Warning);
         }
     });
+
+    // 蓝屏原因（只读）
+    ui->bsodRowsLayout->setAlignment(Qt::AlignTop);
+    connect(ui->btn_bsod, &QAbstractButton::clicked,
+            this, &MainWindow::runBsodAnalysis);
 
     // 开机启动项（只读）
     connect(ui->btn_startup, &QAbstractButton::clicked,
@@ -3773,6 +3851,7 @@ void MainWindow::showSystemResultCard(QWidget *card)
     ui->cardWUpdate->setVisible(card == ui->cardWUpdate);
     ui->cardRestore->setVisible(card == ui->cardRestore);
     ui->cardTreemap->setVisible(card == ui->cardTreemap);
+    ui->cardBsod->setVisible(card == ui->cardBsod);
 
     // 结果卡片分散在不同功能页，取卡片所在页面并滚入视野
     QScrollArea *page = ui->pageSystem;
@@ -8386,6 +8465,224 @@ void MainWindow::addBootRow(const QString &badge, const QString &title,
     ui->bootTimeRowsLayout->insertWidget(insertAt, row);
 }
 
+// ---------------------------------------------------------------- 蓝屏记录
+
+void MainWindow::runBsodAnalysis()
+{
+    const QString script = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("ps1/bsod.ps1"));
+
+    if (!QFileInfo::exists(script)) {
+        showMessage("缺少蓝屏分析脚本",
+                    "未找到 ps1\\bsod.ps1。\n\n"
+                    "请确认程序目录下的 ps1 文件夹完整，或重新获取程序。",
+                    QMessageBox::Critical);
+        return;
+    }
+
+    if (!claimTask(QStringLiteral("分析蓝屏记录")))
+        return;
+
+    ++m_flow;
+
+    clearLog();
+    appendLog(QStringLiteral("正在读取最近的蓝屏与意外关机记录……"));
+
+    while (QLayoutItem *item = ui->bsodRowsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
+    ui->bsodSummary->setText(QStringLiteral("正在读取……"));
+    ui->bsodSummary->setProperty("state", QString());
+    ui->bsodSummary->style()->unpolish(ui->bsodSummary);
+    ui->bsodSummary->style()->polish(ui->bsodSummary);
+    ui->cardBsod->setVisible(true);
+    QTimer::singleShot(0, this, [this] {
+        ui->pageSystem->ensureWidgetVisible(ui->cardBsod);
+    });
+
+    const QStringList args = {
+        QStringLiteral("-NoProfile"),
+        QStringLiteral("-ExecutionPolicy"), QStringLiteral("Bypass"),
+        QStringLiteral("-File"), script
+    };
+
+    m_task = Task::Bsod;
+    m_runner->run(QStringLiteral("powershell.exe"), args);
+}
+
+void MainWindow::handleBsodAnalysis()
+{
+    const QString output = m_runner->collectedOutput();
+    const QString marker = QStringLiteral("BSOD_JSON:");
+    const int markerPos = output.indexOf(marker);
+
+    QString payload;
+    if (markerPos >= 0) {
+        payload = output.mid(markerPos + marker.size())
+                      .section(QLatin1Char('\n'), 0, 0)
+                      .trimmed();
+    }
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(payload.toUtf8(), &parseError);
+    if (payload.isEmpty() || !document.isObject()) {
+        appendLog("-------------------");
+        appendLog(QStringLiteral("读取蓝屏记录失败：未能解析脚本输出。"));
+        ui->bsodSummary->setText(QStringLiteral("读取失败"));
+        showMessage("读取蓝屏记录失败",
+                    "未能从 PowerShell 获取系统事件记录。\n\n"
+                    "请确认系统允许运行 PowerShell 脚本，或稍后重试。",
+                    QMessageBox::Warning);
+        return;
+    }
+
+    const QJsonObject object = document.object();
+    const QJsonArray events = object.value(QStringLiteral("events")).toArray();
+    const QJsonArray minidumps = object.value(QStringLiteral("minidumps")).toArray();
+    const QJsonObject memoryDump = object.value(QStringLiteral("memoryDump")).toObject();
+    const bool minidumpAccessible =
+        object.value(QStringLiteral("minidumpAccessible")).toBool();
+
+    const bool hasRecords = !events.isEmpty();
+    QString summary;
+    QString state;
+    if (!hasRecords) {
+        summary = QStringLiteral("最近没有发现蓝屏或意外关机记录");
+        state = QStringLiteral("ok");
+    } else {
+        const QJsonObject first = events.first().toObject();
+        const QString time = first.value(QStringLiteral("time")).toString();
+        const QString code = first.value(QStringLiteral("code")).toString();
+        if (code.isEmpty()) {
+            summary = QStringLiteral("最近一次异常关机 %1 · 没有留下蓝屏错误码，"
+                                     "通常是断电、强制关机或硬件卡死")
+                          .arg(time);
+            state = QStringLiteral("warn");
+        } else {
+            QString name;
+            QString advice;
+            bugcheckInfo(code, &name, &advice);
+            summary = QStringLiteral("最近一次蓝屏 %1 · %2（%3）")
+                          .arg(time, code, name);
+            state = QStringLiteral("risk");
+        }
+    }
+    ui->bsodSummary->setText(summary);
+    ui->bsodSummary->setProperty("state", state);
+    ui->bsodSummary->style()->unpolish(ui->bsodSummary);
+    ui->bsodSummary->style()->polish(ui->bsodSummary);
+
+    for (const QJsonValue &value : events) {
+        const QJsonObject event = value.toObject();
+        const QString code = event.value(QStringLiteral("code")).toString();
+        const QString time = event.value(QStringLiteral("time")).toString();
+
+        if (code.isEmpty()) {
+            addBsodRow(QStringLiteral("断电/死机"),
+                       QStringLiteral("出现意外关机记录"),
+                       QStringLiteral("时间 %1 · 没有蓝屏错误码，"
+                                      "通常是断电、强制关机或硬件卡死。")
+                           .arg(time));
+            continue;
+        }
+
+        QStringList parts;
+        for (const QJsonValue &p : event.value(QStringLiteral("params")).toArray()) {
+            const QString text = p.toString();
+            if (!text.isEmpty())
+                parts << text;
+        }
+
+        QString name;
+        QString advice;
+        bugcheckInfo(code, &name, &advice);
+
+        QString detail = QStringLiteral("时间 %1").arg(time);
+        if (!parts.isEmpty())
+            detail += QStringLiteral(" · 参数 %1")
+                          .arg(parts.join(QStringLiteral(" ")));
+        detail += QStringLiteral("\n建议：%1").arg(advice);
+        addBsodRow(code, name, detail);
+    }
+
+    if (memoryDump.value(QStringLiteral("exists")).toBool()) {
+        const qint64 dumpSize = static_cast<qint64>(
+            memoryDump.value(QStringLiteral("size")).toDouble());
+        addBsodRow(QStringLiteral("完整转储"),
+                   QStringLiteral("存在 MEMORY.DMP"),
+                   QStringLiteral("时间 %1 · 大小 %2\n"
+                                  "完整的系统内存转储，可交给专业工具进一步分析。")
+                       .arg(memoryDump.value(QStringLiteral("time")).toString(),
+                            formatFileSize(dumpSize)));
+    }
+
+    if (!minidumps.isEmpty()) {
+        const QJsonObject latest = minidumps.first().toObject();
+        const qint64 dumpSize = static_cast<qint64>(
+            latest.value(QStringLiteral("size")).toDouble());
+        addBsodRow(QStringLiteral("小型转储"),
+                   QStringLiteral("找到 %1 个转储文件").arg(minidumps.size()),
+                   QStringLiteral("最近一个 %1 · %2 · %3\n"
+                                  "转储文件保存在 C:\\Windows\\Minidump，"
+                                  "可用于进一步定位问题驱动。")
+                       .arg(latest.value(QStringLiteral("name")).toString(),
+                            latest.value(QStringLiteral("time")).toString(),
+                            formatFileSize(dumpSize)));
+    } else if (!minidumpAccessible) {
+        addBsodRow(QStringLiteral("小型转储"),
+                   QStringLiteral("无法读取转储文件夹"),
+                   QStringLiteral("C:\\Windows\\Minidump 需要管理员权限读取。\n"
+                                  "以管理员身份重新运行本程序，"
+                                  "或到该文件夹手动查看 .dmp 文件。"));
+    } else {
+        addBsodRow(QStringLiteral("小型转储"),
+                   QStringLiteral("没有找到小型转储文件"),
+                   QStringLiteral("可能系统未开启转储，或文件已被清理工具删除。"));
+    }
+
+    appendLog("-------------------");
+    appendLog(summary);
+    if (hasRecords) {
+        appendLog(QStringLiteral("共找到 %1 条异常记录（最多显示最近 10 条）。")
+                      .arg(events.size()));
+    }
+}
+
+void MainWindow::addBsodRow(const QString &badge, const QString &title,
+                            const QString &detail)
+{
+    QWidget *row = new QWidget(ui->bsodRows);
+    QHBoxLayout *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(10);
+
+    QLabel *badgeLabel = new QLabel(badge, row);
+    badgeLabel->setObjectName(QStringLiteral("bootBadge"));
+    badgeLabel->setAlignment(Qt::AlignCenter);
+    badgeLabel->setFixedWidth(96);
+
+    QLabel *titleLabel = new QLabel(title, row);
+    titleLabel->setObjectName(QStringLiteral("bootName"));
+
+    QLabel *desc = new QLabel(detail, row);
+    desc->setObjectName(QStringLiteral("bootDetail"));
+    desc->setWordWrap(true);
+    desc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    QVBoxLayout *text = new QVBoxLayout;
+    text->setContentsMargins(0, 0, 0, 0);
+    text->setSpacing(2);
+    text->addWidget(titleLabel);
+    text->addWidget(desc);
+
+    layout->addWidget(badgeLabel, 0, Qt::AlignTop);
+    layout->addLayout(text, 1);
+
+    ui->bsodRowsLayout->addWidget(row);
+}
+
 // ---------------------------------------------------------------- 文件占用
 
 void MainWindow::runFileLock(const QString &path)
@@ -8976,6 +9273,7 @@ QString MainWindow::currentTaskLabel() const
     case Task::ContextMenuList: return QStringLiteral("读取右键菜单项");
     case Task::ContextMenuToggle: return QStringLiteral("修改右键菜单项");
     case Task::BootTime:        return QStringLiteral("分析开机耗时");
+    case Task::Bsod:            return QStringLiteral("分析蓝屏记录");
     case Task::FileLock:        return QStringLiteral("查找文件占用");
     case Task::FileVerify:      return QStringLiteral("检查文件是否被伪装");
     default:                    return QStringLiteral("当前任务");
@@ -9197,6 +9495,7 @@ bool MainWindow::backgroundResultViewable(Task task) const
     case Task::FileLock:
     case Task::FileVerify:
     case Task::BootTime:
+    case Task::Bsod:
     case Task::ContextMenuList:
     case Task::Treemap:
     case Task::RestoreList:
@@ -9233,6 +9532,7 @@ int MainWindow::pageForTask(Task task) const
     case Task::SxsCleanup:
     case Task::RestoreList:
     case Task::RestoreCreate:
+    case Task::Bsod:
         return 2;
     case Task::DiskHealth:
     case Task::HwInfo:
@@ -9294,6 +9594,7 @@ void MainWindow::viewBackgroundResult(ProcessRunner *runner)
     case Task::UninstallList:    showSystemResultCard(ui->cardUninstall); break;
     case Task::DriverList:       showSystemResultCard(ui->cardDrivers); break;
     case Task::Treemap:          showSystemResultCard(ui->cardTreemap); break;
+    case Task::Bsod:             showSystemResultCard(ui->cardBsod); break;
     default: break;
     }
 

@@ -910,6 +910,46 @@ def test_fake_check(exe, shot_dir):
                 proc.kill()
 
 
+def test_bsod_card(exe, shot_dir):
+    """测试8：蓝屏原因卡片可打开并渲染记录"""
+    print("\n[测试8] 蓝屏原因卡片")
+    proc = subprocess.Popen([exe], cwd=os.path.dirname(exe))
+    try:
+        hwnd = find_app_window(proc)
+        if not hwnd:
+            check("启动并显示主窗口", False, "未找到窗口")
+            return
+        time.sleep(2)
+
+        switched, detail = uia_click(proc.pid, "navSystemBtn")
+        check("切到系统维护页", switched, detail)
+        time.sleep(0.5)
+
+        opened, detail = uia_click(proc.pid, "btn_bsod")
+        check("打开蓝屏原因卡片", opened, detail)
+        time.sleep(1.0)
+
+        check("蓝屏原因卡片存在", uia_exists(proc.pid, "cardBsod"))
+        check("蓝屏汇总行存在", uia_exists(proc.pid, "bsodSummary"))
+        check("蓝屏结果区存在", uia_exists(proc.pid, "bsodRows"))
+        check("蓝屏结果已渲染",
+              wait_uia_name_contains(proc.pid, "转储", timeout=15),
+              "未找到转储文件说明行")
+
+        shot = os.path.join(shot_dir, "uitest_bsod.png")
+        if capture(hwnd, shot):
+            check("保存蓝屏分析截图", True, shot)
+
+        check("进程未崩溃", proc.poll() is None, f"exit={proc.poll()}")
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+
+
 def main():
     if len(sys.argv) < 2:
         print("用法: python uitest.py <exe路径>")
@@ -931,6 +971,7 @@ def main():
     test_background_result(exe, shot_dir)
     test_operation_page(exe, shot_dir)
     test_fake_check(exe, shot_dir)
+    test_bsod_card(exe, shot_dir)
 
     print(f"\n===== 结果: {passed} passed, {failed} failed =====")
     return 0 if failed == 0 else 1
